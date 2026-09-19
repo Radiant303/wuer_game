@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>弹核球 NEON PINBALL</title>
 <style>
-  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#05060d;touch-action:none;}
+  html,body{margin:0;padding:0;height:100%;height:100dvh;overflow:hidden;background:#05060d;touch-action:none;}
+  body{position:fixed;inset:0;width:100%;}
   canvas{display:block;position:absolute;inset:0;}
   *{user-select:none;-webkit-tap-highlight-color:transparent;}
   .ovl{position:absolute;inset:0;pointer-events:none;}
@@ -1067,6 +1068,20 @@ let touchEls = null;
 let touchMode = '';
 let uiTouch = false;
 let fireTouch = false;
+
+// 触屏端进入游戏时请求全屏并锁定横屏（安卓生效；iOS 不支持则静默忽略）
+function tryFullscreen(){
+  if(!isTouchDevice) return;
+  try{
+    const el = document.documentElement;
+    if(!document.fullscreenElement && el.requestFullscreen){
+      const r = el.requestFullscreen({ navigationUI: 'hide' });
+      if(r && r.then) r.then(() => {
+        try{ if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); }catch(e){}
+      }).catch(() => {});
+    }
+  }catch(e){}
+}
 
 function setupTouch(){
   touchEls = {
@@ -4861,7 +4876,10 @@ async function main(){
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', e => { keys[e.code] = false; });
   window.addEventListener('blur', () => { for(const k in keys) keys[k] = false; });
-  window.addEventListener('resize', () => {
+  // 尺寸同步：窗口/旋转/可视区变化时重算。旋转手机后浏览器尺寸分几步才稳定，补几次延迟同步
+  function onResize(){
+    window.scrollTo(0, 0);
+    document.documentElement.style.height = window.innerHeight + 'px';
     W = window.innerWidth; H = window.innerHeight;
     computeWorld();
     makeNebulae();
@@ -4877,13 +4895,22 @@ async function main(){
     WALL.ft.position.set(world.w / 2, 4); WALL.ft.scale.set(world.w / 64, 14 / 64);
     WALL.fb.position.set(world.w / 2, world.h - 4); WALL.fb.scale.set(world.w / 64, 14 / 64);
     app.stage.hitArea = new Pixi.Rectangle(0, 0, W, H);
+    try{ app.renderer.resize(W, H); }catch(e){}
     if(state.mode === 'cards') buildCardUI();
+  }
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', () => {
+    onResize();
+    setTimeout(onResize, 120);
+    setTimeout(onResize, 400);
+    setTimeout(onResize, 900);
   });
+  if(window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
   app.stage.eventMode = 'static';
   app.stage.hitArea = new Pixi.Rectangle(0, 0, W, H);
   app.stage.on('pointertap', () => {
-    if(state.mode === 'title'){ audioInit(); startGame(); }
-    else if(state.mode === 'dead'){ audioInit(); startGame(); }
+    if(state.mode === 'title'){ audioInit(); tryFullscreen(); startGame(); }
+    else if(state.mode === 'dead'){ audioInit(); tryFullscreen(); startGame(); }
   });
 
   player.x = world.w / 2;
