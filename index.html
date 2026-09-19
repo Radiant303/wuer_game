@@ -1504,7 +1504,7 @@ function updateCamera(dt){
     if(player.dashTime > 0) tz = 1.05;
     else if(player.overload > 0) tz = 1.02 + Math.sin(state.time * 9) * 0.01;
   }
-  if(uiTouch) tz *= 0.8;   // 触屏端整体拉远镜头，同屏看到更多战场
+  if(uiTouch) tz *= 0.75;   // 触屏端整体拉远镜头，同屏看到更多战场
   cam.zoom = lerp(cam.zoom, tz, 1 - Math.exp(-5 * dt));
 }
 
