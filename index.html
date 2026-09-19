@@ -4068,7 +4068,10 @@ function drawMinimap(){
 function drawBossBar(){
   const b = enemies.find(e => e.type === 'boss');
   if(!b){ HT.boss.text = ''; return; }
-  const bw = Math.min(470, W * 0.56), bx = W / 2 - bw / 2, by = H - 106, bh = 22;
+  // 触屏端：挪到顶部居中并压扁，避免遮挡底部战斗视野
+  const bw = uiTouch ? Math.min(300, W * 0.5) : Math.min(470, W * 0.56);
+  const bx = W / 2 - bw / 2, by = uiTouch ? 6 : H - 106, bh = uiTouch ? 10 : 22;
+  const nameY = uiTouch ? by + bh + 2 : by - 18;
   const k = clamp(b.hp / b.maxHp, 0, 1);
   const barCol = b.enraged ? 0xff5e3d : b.color;
   // 外框双线 + 底座
@@ -4093,11 +4096,12 @@ function drawBossBar(){
   const bk = BOSS_KINDS[b.bossKind || 0];
   HT.boss.text = b.enraged ? `狂 怒 · ${bk.name}` : `${bk.name}  ${bk.en}`;
   HT.boss.style.fill = b.enraged ? 0xffb09a : 0xffd7f4;
-  HT.boss.position.set(W / 2, by - 18);
+  setFs(HT.boss, uiTouch ? 9 : 11);
+  HT.boss.position.set(W / 2, nameY);
   // 名称两侧装饰线
   const nbw = HT.boss.width || 120;
-  hudG.moveTo(W / 2 - nbw / 2 - 42, by - 12).lineTo(W / 2 - nbw / 2 - 12, by - 12).stroke({ width: 1, color: barCol, alpha: 0.5 });
-  hudG.moveTo(W / 2 + nbw / 2 + 12, by - 12).lineTo(W / 2 + nbw / 2 + 42, by - 12).stroke({ width: 1, color: barCol, alpha: 0.5 });
+  hudG.moveTo(W / 2 - nbw / 2 - 42, nameY + 6).lineTo(W / 2 - nbw / 2 - 12, nameY + 6).stroke({ width: 1, color: barCol, alpha: 0.5 });
+  hudG.moveTo(W / 2 + nbw / 2 + 12, nameY + 6).lineTo(W / 2 + nbw / 2 + 42, nameY + 6).stroke({ width: 1, color: barCol, alpha: 0.5 });
 }
 
 function updateMarkers(){
