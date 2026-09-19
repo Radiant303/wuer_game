@@ -693,7 +693,7 @@ const state = {
   spawnQueue: [], spawnTimer: 0, flash: 0, hitStop: 0,
   stormCd: 10, meteorCd: 3, particleCap: 900,
   level: 1, xp: 0, xpNeed: 40, pending: 0, cards: [], offer: [], sel: 0, novaFlash: 0,
-  wuerDone: false
+  wuerDone: false, stasis: 0, magnetize: 0, pendingSkill: null
 };
 
 const player = {
@@ -702,7 +702,8 @@ const player = {
   angle: 0, invuln: 0, fireCd: 0, dashCd: 0, dashTime: 0, healCd: 0,
   overload: 0, hitFlash: 0, shield: 0, rebound: 0, reboundT: 0,
   power: 0, powerType: null, powerMax: 9,
-  blessDmg: 0, blessShot: 0,
+  blessDmg: 0, blessShot: 0, frenzy: 0, webSlow: 0,
+  actives: [],
   shotN: 0, reviveUsed: 0, trail: [], moveDir: { x: 0, y: 0 }
 };
 
@@ -805,6 +806,134 @@ const WUER_DEF = {
   }
 };
 
+// ---------------- 常驻技能（选卡保底出现，选中后进入技能栏，1/2/3 释放；重复选择升阶） ----------------
+const ACTIVE_DEFS = [
+  { id:'nova',   n:'震荡新星', c:0xffe45c, cd:9,  skill:true, v:[1, 1.5, 2, 2.6, 3.3],
+    d:v=>`主动：新星冲击 · 伤害 ${Math.round(70*v)} · 范围 ${Math.round(190+45*v)}`,
+    a:()=>{} },
+  { id:'stasis', n:'时间凝滞', c:0x7fb8ff, cd:15, skill:true, v:[2.5, 3.2, 4, 5, 6],
+    d:v=>`主动：全场敌人与敌弹减速 75%，持续 ${v}s`,
+    a:()=>{} },
+  { id:'aegis',  n:'离子壁垒', c:0x5affc8, cd:16, skill:true, v:[2, 2.6, 3.2, 4, 5],
+    d:v=>`主动：无敌 ${v}s 并获得 1 层护盾`,
+    a:()=>{} },
+  { id:'frenzy', n:'火力狂潮', c:0xff9a6a, cd:14, skill:true, v:[3.5, 4.5, 5.5, 7, 9],
+    d:v=>`主动：${v}s 内射速 +60% · 伤害 +40%`,
+    a:()=>{} },
+  { id:'blink',  n:'相位闪现', c:0xb06bff, cd:6,  skill:true, v:[1, 1.25, 1.5, 1.8, 2.2],
+    d:v=>`主动：向前瞬移 ${Math.round(200*v)} · 无敌 0.4s`,
+    a:()=>{} },
+  { id:'magnet', n:'磁暴牵引', c:0x5ffbf1, cd:12, skill:true, v:[3, 4, 5, 6, 7.5],
+    d:v=>`主动：${v}s 内全图拾取物被吸向核心`,
+    a:()=>{} }
+];
+const ACTIVE_BY_ID = {};
+for(const d of ACTIVE_DEFS) ACTIVE_BY_ID[d.id] = d;
+
+function castActive(i){
+  if(state.mode !== 'playing') return;
+  const s = player.actives[i];
+  if(!s || s.cd > 0) return;
+  const def = ACTIVE_BY_ID[s.id];
+  const v = def.v[s.lv - 1];
+  const p = player;
+  s.cd = def.cd;
+  switch(s.id){
+    case 'nova': {
+      const R = 190 + 45 * v;
+      spawnRing(p.x, p.y, 0xffe45c, 138, 0.5, 3);
+      spawnRing(p.x, p.y, 0xffffff, 100, 0.4, 2.5);
+      spawnParticles(p.x, p.y, 34, 0xffe45c, 460, 0.6, 3.2);
+      spawnSparks(p.x, p.y, 10, 0xffe45c, 1.6);
+      state.shake = Math.max(state.shake, 9);
+      splashDamage(p.x, p.y, R, 70 * v * M.dmg, 620);
+      addFloat(p.x, p.y - 34, '震荡新星', 0xffe45c, 17);
+      SFX.nova();
+      break;
+    }
+    case 'stasis':
+      state.stasis = v;
+      addFloat(p.x, p.y - 34, '时间凝滞', 0x7fb8ff, 17);
+      spawnRing(p.x, p.y, 0x7fb8ff, 138, 0.6, 2.5);
+      spawnParticles(p.x, p.y, 24, 0x7fb8ff, 260, 0.6, 2.8);
+      tone(520, 0.4, 'sine', 0.16, 120);
+      break;
+    case 'aegis':
+      p.invuln = Math.max(p.invuln, v);
+      p.shield = Math.min(M.shieldCap, p.shield + 1);
+      addFloat(p.x, p.y - 34, '离子壁垒', 0x5affc8, 17);
+      spawnRing(p.x, p.y, 0x5affc8, 110, 0.5, 3);
+      spawnParticles(p.x, p.y, 20, 0x5affc8, 240, 0.5, 2.8);
+      SFX.shieldUp();
+      break;
+    case 'frenzy':
+      p.frenzy = v;
+      addFloat(p.x, p.y - 34, '火力狂潮', 0xff9a6a, 17);
+      spawnRing(p.x, p.y, 0xff9a6a, 100, 0.4, 3);
+      spawnParticles(p.x, p.y, 20, 0xff9a6a, 300, 0.5, 3);
+      SFX.overload();
+      break;
+    case 'blink': {
+      let dx = p.moveDir.x, dy = p.moveDir.y;
+      if(!dx && !dy){ dx = Math.cos(p.angle); dy = Math.sin(p.angle); }
+      const l = Math.hypot(dx, dy) || 1;
+      dx /= l; dy /= l;
+      spawnParticles(p.x, p.y, 18, 0xb06bff, 300, 0.45, 3);
+      spawnRing(p.x, p.y, 0xb06bff, 80, 0.35, 2.5);
+      p.x = clamp(p.x + dx * 200 * v, p.r, world.w - p.r);
+      p.y = clamp(p.y + dy * 200 * v, p.r, world.h - p.r);
+      p.invuln = Math.max(p.invuln, 0.4);
+      spawnParticles(p.x, p.y, 22, 0xb06bff, 340, 0.5, 3);
+      spawnSparks(p.x, p.y, 6, 0xb06bff, 1.3);
+      addFloat(p.x, p.y - 34, '相位闪现', 0xb06bff, 17);
+      SFX.dash();
+      break;
+    }
+    case 'magnet':
+      state.magnetize = v;
+      addFloat(p.x, p.y - 34, '磁暴牵引', 0x5ffbf1, 17);
+      spawnRing(p.x, p.y, 0x5ffbf1, 130, 0.5, 2.5);
+      tone(300, 0.35, 'sine', 0.14, 620);
+      break;
+  }
+}
+
+// 选中常驻卡：已有则升阶；有空位则入栏；栏满则进入替换流程
+function gainActive(def, tier){
+  const cur = player.actives.find(s => s.id === def.id);
+  if(cur){
+    cur.lv = Math.min(5, cur.lv + (tier >= 3 ? 2 : 1));
+    addFloat(player.x, player.y - 58, `${def.n} 升阶 Lv${cur.lv}`, def.c, 16);
+    return false;
+  }
+  if(player.actives.length < 3){
+    player.actives.push({ id: def.id, lv: tier + 1, cd: 0 });
+    addFloat(player.x, player.y - 58, '常驻技能 · ' + def.n, def.c, 16);
+    return false;
+  }
+  state.pendingSkill = { id: def.id, lv: tier + 1 };
+  return true;
+}
+
+// 栏满后的替换选择：把三个已装备技能伪装成三张卡复用选卡界面
+function buildReplaceUI(){
+  const ps = state.pendingSkill;
+  const def = ACTIVE_BY_ID[ps.id];
+  state.offer = player.actives.map(s => {
+    const cur = ACTIVE_BY_ID[s.id];
+    return { def: {
+      n: '替换 · ' + cur.n, c: cur.c, v: [0, 0, 0, 0, 0],
+      d: () => `以【${def.n} Lv${ps.lv}】替换【${cur.n} Lv${s.lv}】`,
+      a: () => {}
+    }, tier: s.lv - 1 };
+  });
+  state.cardTitle = '技 能 栏 已 满';
+  state.cardSub = `选择要替换的常驻技能 · 1 2 3 或鼠标点击 · ESC 放弃【${def.n}】`;
+  buildCardUI();
+  state.cardTitle = null;
+  state.cardSub = null;
+}
+
 let idSeq = 0;
 let bullets = [], ebullets = [], enemies = [], particles = [], floats = [],
     pillars = [], pickups = [], rings = [], nebulae = [], dust = [],
@@ -845,6 +974,7 @@ function onKeyDown(e){
       else if(code === 'ArrowLeft' || code === 'ArrowUp' || code === 'KeyA') moveSel(-1);
       else if(code === 'ArrowRight' || code === 'ArrowDown' || code === 'KeyD') moveSel(1);
       else if(code === 'Enter' || code === 'NumpadEnter' || code === 'Space') pickOffer(state.sel);
+      else if(code === 'Escape' && state.pendingSkill){ state.pendingSkill = null; addFloat(player.x, player.y - 58, '已放弃新技能', 0x9fb0c8, 14); settlePick(); }
     }
     return;
   }
@@ -860,7 +990,9 @@ function onKeyDown(e){
     if(code === 'KeyK') tryDash();
     if(code === 'KeyH') tryHeal();
     if(code === 'Space') tryOverload();
-    if(code === 'Digit9') openCards(); // DEBUG-临时
+    if(code === 'Digit1' || code === 'Numpad1') castActive(0);
+    if(code === 'Digit2' || code === 'Numpad2') castActive(1);
+    if(code === 'Digit3' || code === 'Numpad3') castActive(2);
   }
   keys[code] = true;
 }
@@ -1192,6 +1324,7 @@ function startGame(){
   state.level = 1; state.xp = 0; state.xpNeed = xpNeed(1);
   state.pending = 0; state.cards = []; state.offer = [];
   state.wuerDone = false;
+  state.stasis = 0; state.magnetize = 0; state.pendingSkill = null;
 
   M = MDEF();
   clearCardUI();
@@ -1206,6 +1339,7 @@ function startGame(){
   player.shield = 0; player.rebound = 0; player.reboundT = 0;
   player.shotN = 0; player.reviveUsed = 0;
   player.blessDmg = 0; player.blessShot = 0;
+  player.frenzy = 0; player.webSlow = 0; player.actives.length = 0;
   player.angle = -Math.PI / 2;
   player.trail.length = 0;
 
@@ -1317,11 +1451,17 @@ function rollTier(){
 function rollOffer(){
   // 特殊规则：第一次升级三选一必定全是【吾二】，之后永不出现
   if(!state.wuerDone) return [{ def: WUER_DEF, tier: 4 }, { def: WUER_DEF, tier: 4 }, { def: WUER_DEF, tier: 4 }];
+  // 保底规则：三张卡中至少一张是常驻技能（随机槽位）
+  const actSlot = Math.floor(Math.random() * 3);
   const seen = {};
   const out = [];
   let guard = 0;
   while(out.length < 3 && guard < 300){
     guard++;
+    if(out.length === actSlot){
+      out.push({ def: ACTIVE_DEFS[Math.floor(Math.random() * ACTIVE_DEFS.length)], tier: rollTier() });
+      continue;
+    }
     const i = Math.floor(Math.random() * CARD_DEFS.length);
     if(seen[i]) continue;
     seen[i] = 1;
@@ -1351,6 +1491,20 @@ function pickOffer(i){
   if(state.mode !== 'cards') return;
   const o = state.offer[i];
   if(!o) return;
+  // 替换选择模式：offer 中的三张卡代表技能栏槽位
+  if(state.pendingSkill){
+    if(!player.actives[i]) return;
+    const ps = state.pendingSkill;
+    const def = ACTIVE_BY_ID[ps.id];
+    const oldName = ACTIVE_BY_ID[player.actives[i].id].n;
+    player.actives[i] = { id: ps.id, lv: ps.lv, cd: 0 };
+    state.pendingSkill = null;
+    SFX.card();
+    addFloat(player.x, player.y - 40, `${def.n} 替换 ${oldName}`, def.c, 16);
+    spawnRing(player.x, player.y, def.c, 130, 0.5, 3);
+    settlePick();
+    return;
+  }
   o.def.a(M, o.def.v[o.tier]);
   if(o.def === WUER_DEF) state.wuerDone = true;
   state.cards.push({ n: o.def.n, t: o.tier, c: o.def.c });
@@ -1359,6 +1513,15 @@ function pickOffer(i){
   addFloat(player.x, player.y - 40, o.def.n, o.def.c, 18);
   spawnRing(player.x, player.y, o.def.c, 150, 0.5, 4);
   spawnParticles(player.x, player.y, 24, o.def.c, 300, 0.6, 3);
+  // 常驻技能：入栏 / 升阶；栏满则先走替换流程再结算本次升级
+  if(o.def.skill && gainActive(o.def, o.tier)){
+    buildReplaceUI();
+    return;
+  }
+  settlePick();
+}
+
+function settlePick(){
   state.pending--;
   if(state.pending > 0){
     state.offer = rollOffer();
@@ -1441,7 +1604,7 @@ function collectPickup(u){
 
 function updatePickups(dt){
   const p = player;
-  const magnet = 165 * M.magnet;
+  const magnet = state.magnetize > 0 ? 4000 : 165 * M.magnet;
   for(let i = pickups.length - 1; i >= 0; i--){
     const u = pickups[i];
     u.life -= dt; u.phase += dt * 3;
@@ -1478,6 +1641,15 @@ const BASE = {
   boss:     { hp: 1150, r: 44, speed: 54, color: 0xff2fd0, dmg: 34, score: 250 }
 };
 const TEX_OF = { chaser:'pChaser', turret:'pTurret', tank:'pTank', splitter:'pSplitter', mini:'pMini', stinger:'pStinger', weaver:'pWeaver', carrier:'pCarrier', boss:'pBoss' };
+
+// ---------------- BOSS 种类（每 5 波一只，越往后体积越大、技能越强） ----------------
+const BOSS_KINDS = [
+  { key:'overseer', name:'监 督 者',   en:'O V E R S E E R',   color:0xff2fd0 },  // 经典：冲锋 + 弹幕 + 召唤
+  { key:'brood',    name:'织 网 主 母', en:'B R O O D M A T H E R', color:0x38b6ff },  // 蛛群召唤 + 减速网弹 + 散射
+  { key:'ravager',  name:'毁 灭 者',   en:'R A V A G E R',     color:0xff5e3d },  // 连续冲锋 + 双螺旋弹幕
+  { key:'tempest',  name:'风 暴 先 知', en:'T E M P E S T',     color:0xb06bff },  // 闪现 + 旋转风暴 + 环形弹幕
+  { key:'core',     name:'歼 灭 核 心', en:'A N N I H I L A T O R', color:0xffc83d }   // 全能：所有机制强化版
+];
 
 function spawnEnemyAt(type, x, y, elite = false, master = null){
   const b = BASE[type];
@@ -1516,7 +1688,20 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     spawnRing(x, y, 0xffc83d, Math.min(138, e.r * 3.8), 0.6, 2.5);
     addFloat(x, y - e.r - 18, 'ELITE', 0xffc83d, 13);
   }
-  if(type === 'boss') bossEntrance(e);
+  if(type === 'boss'){
+    // 阶级 = BOSS 波序号：体积 / 生命 / 伤害 / 弹幕强度逐阶提升
+    const t = Math.max(1, Math.round(state.wave / 5));
+    const k = BOSS_KINDS[(t - 1) % BOSS_KINDS.length];
+    e.bossTier = t;
+    e.bossKind = (t - 1) % BOSS_KINDS.length;
+    e.color = k.color;
+    e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
+    e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)));
+    e.dmg *= 1 + 0.13 * (t - 1);
+    e.speed *= 1 + 0.05 * (t - 1);
+    e.blinkCd = 4; e.spiralT = 0; e.chainLeft = 0; e.ringCd = 3;
+    bossEntrance(e);
+  }
   return e;
 }
 
@@ -1538,10 +1723,11 @@ function bossEntrance(b){
   state.shake = Math.max(state.shake, 20);
   state.flash = Math.max(state.flash, 0.4);
   state.hitStop = Math.max(state.hitStop, 0.22);
-  spawnRing(b.x, b.y, 0xff2fd0, 138, 0.7, 3);
+  spawnRing(b.x, b.y, b.color, 138, 0.7, 3);
   spawnRing(b.x, b.y, 0xffffff, 100, 0.5, 2.5);
-  spawnShards(b.x, b.y, 14, 0xff2fd0, 1.6);
-  addFloat(b.x, b.y - b.r - 30, '!! 监督者降临 !!', 0xff2fd0, 24);
+  spawnShards(b.x, b.y, 14, b.color, 1.6);
+  const kName = BOSS_KINDS[b.bossKind || 0].name;
+  addFloat(b.x, b.y - b.r - 30, '!! ' + kName + ' 降临 !!', b.color, 24);
   if(cleared > 0) addFloat(b.x, b.y + b.r + 22, '湮灭 ×' + cleared, 0xffd7f4, 15);
   tone(70, 0.7, 'sawtooth', 0.28, 36);
   noiseHit(0.5, 0.2, 300, 0.8);
@@ -1830,14 +2016,16 @@ function tryFire(){
   const over = p.overload > 0;
   const pow = p.power > 0 ? p.powerType : null;
   const bless = p.blessShot > 0;
+  const fren = p.frenzy > 0;
   let rate = CFG.fireRate * M.rate;
   if(pow === 'rapid') rate *= 0.55;
+  if(fren) rate *= 0.625;
   p.fireCd = Math.max(0.03, rate);
 
   const a = p.angle;
   const muzzle = p.r + 8;
-  let dmg = CFG.bulletDmg * M.dmg * CFG_OVERMUL(over);
-  const baseCol = bless ? 0xffc83d : (over ? 0xffe45c : (pow ? POWER_INFO[pow].color : 0x5ffbf1));
+  let dmg = CFG.bulletDmg * M.dmg * CFG_OVERMUL(over) * (fren ? 1.4 : 1);
+  const baseCol = bless ? 0xffc83d : (fren ? 0xff9a6a : (over ? 0xffe45c : (pow ? POWER_INFO[pow].color : 0x5ffbf1)));
   p.shotN++;
 
   const angles = [0];
@@ -1905,6 +2093,9 @@ function updatePlayer(dt){
   if(p.reboundT <= 0) p.rebound = 0;
   p.blessDmg = Math.max(0, p.blessDmg - dt);
   p.blessShot = Math.max(0, p.blessShot - dt);
+  p.frenzy = Math.max(0, p.frenzy - dt);
+  p.webSlow = Math.max(0, p.webSlow - dt);
+  for(const s of p.actives) s.cd = Math.max(0, s.cd - dt);
 
   if(M.idleHeal > 0 && !keys['KeyW'] && !keys['KeyA'] && !keys['KeyS'] && !keys['KeyD']){
     p.hp = Math.min(p.maxHp, p.hp + M.idleHeal * dt);
@@ -1930,7 +2121,7 @@ function updatePlayer(dt){
     const damp = Math.exp(-CFG.damp * dt);
     p.vx *= damp; p.vy *= damp;
     const sp = Math.hypot(p.vx, p.vy);
-    const maxSp = CFG.maxSpeed * M.spd * (p.overload > 0 ? 1.12 : 1) * boost;
+    const maxSp = CFG.maxSpeed * M.spd * (p.overload > 0 ? 1.12 : 1) * boost * (p.webSlow > 0 ? 0.55 : 1);
     if(sp > maxSp){ p.vx = p.vx / sp * maxSp; p.vy = p.vy / sp * maxSp; }
   }
 
@@ -2103,10 +2294,11 @@ function updateBullets(dt){
 }
 
 function updateEBullets(dt){
+  const stK = state.stasis > 0 ? 0.25 : 1;
   for(let i = ebullets.length - 1; i >= 0; i--){
     const b = ebullets[i];
     b.life -= dt;
-    b.x += b.vx * dt; b.y += b.vy * dt;
+    b.x += b.vx * dt * stK; b.y += b.vy * dt * stK;
     if(b.x < b.r || b.x > world.w - b.r) b.vx *= -1;
     if(b.y < b.r || b.y > world.h - b.r) b.vy *= -1;
     b.x = clamp(b.x, b.r, world.w - b.r);
@@ -2114,6 +2306,7 @@ function updateEBullets(dt){
 
     const d = Math.hypot(b.x - player.x, b.y - player.y);
     if(d < player.r + b.r){
+      if(b.web) player.webSlow = 1.4;
       hurtPlayer(b.dmg);
       spawnParticles(b.x, b.y, 10, 0xff3d6e, 220, 0.45, 3);
       freeEBullet(b); ebullets.splice(i, 1);
@@ -2141,6 +2334,7 @@ function updateEnemies(dt){
     if(e.slowT > 0) slow *= 1 - clamp(e.slowAmt, 0, 0.75);
     if(M.aura > 0 && Math.hypot(e.x - player.x, e.y - player.y) < 130) slow *= 1 - M.aura;
     if(e.spawnT > 0) slow *= 0.35;
+    if(state.stasis > 0) slow *= 0.25;   // 常驻技能：时间凝滞
 
     const dx = player.x - e.x, dy = player.y - e.y;
     const d = Math.hypot(dx, dy) || 1;
@@ -2225,66 +2419,7 @@ function updateEnemies(dt){
         }
       }
     } else if(e.type === 'boss'){
-      e.chargeCd -= dt * slow * aggro;
-      if(e.tele > 0){
-        e.tele -= dt * slow;
-        spawnParticles(e.x, e.y, 2, 0xff2fd0, 120, 0.4, 2.6);
-        if(e.tele <= 0){ e.chargeT = 0.75; e.dirX = nx; e.dirY = ny; SFX.charge(); spawnRing(e.x, e.y, 0xff2fd0, 90, 0.3, 4); }
-      } else if(e.chargeT > 0){
-        e.chargeT -= dt;
-        const cs = 950 * slow;
-        e.x += e.dirX * cs * dt; e.y += e.dirY * cs * dt;
-        spawnParticles(e.x, e.y, 2, 0xff2fd0, 60, 0.3, 2.4);
-        state.shake = Math.max(state.shake, 3);
-      } else {
-        e.x += nx * spd * dt;
-        e.y += ny * spd * dt;
-        e.shootCd -= dt * slow * aggro;
-        if(e.shootCd <= 0 && e.spawnT <= 0){
-          e.shootCd = e.enraged ? 1.6 : 2.2;
-          const base = Math.atan2(dy, dx);
-          e.shotToggle = (e.shotToggle + 1) % 2;
-          const shots = [];
-          if(e.shotToggle === 0){
-            for(let k = -2; k <= 2; k++) shots.push([base + k * 0.26, 250, 8, 13, 0xff2fd0]);
-          } else {
-            const n2 = e.enraged ? 14 : 10;
-            for(let k = 0; k < n2; k++) shots.push([e.wob + k * TAU / n2, 210, 7, 11, 0xff6fe0]);
-          }
-          for(const [a, sp, rr, dm, cc] of shots){
-            mkEBullet({ x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
-              vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rr, dmg: dm, life: 5.5, color: cc });
-          }
-          tone(220, 0.2, 'sawtooth', 0.12, 90);
-        }
-        if(e.chargeCd <= 0 && e.spawnT <= 0 && d > 220){
-          e.chargeCd = e.enraged ? rand(4.5, 6.5) : rand(6.5, 9.5);
-          e.tele = 0.55;
-          spawnRing(e.x, e.y, 0xff2fd0, 120, 0.55, 3);
-          addFloat(e.x, e.y - e.r - 20, '!! 冲锋', 0xff2fd0, 14);
-        }
-        // 召唤小弟：在场召唤物有上限，狂怒后更多更快
-        e.summonCd -= dt * slow;
-        if(e.summonCd <= 0 && e.spawnT <= 0){
-          let adds = 0;
-          for(const o of enemies) if(o.master === 'boss') adds++;
-          if(adds < (e.enraged ? 6 : 4)){
-            e.summonCd = e.enraged ? 7.5 : 10.5;
-            const n2 = e.enraged ? 4 : 3;
-            for(let k = 0; k < n2; k++){
-              const a = e.wob + k * TAU / n2;
-              spawnEnemyAt(e.enraged && state.wave >= 10 ? 'stinger' : 'mini',
-                clamp(e.x + Math.cos(a) * (e.r + 34), 30, world.w - 30),
-                clamp(e.y + Math.sin(a) * (e.r + 34), 30, world.h - 30), false, 'boss');
-            }
-            addFloat(e.x, e.y - e.r - 20, '召唤', 0xff6fe0, 15);
-            spawnRing(e.x, e.y, 0xff2fd0, 120, 0.5, 2.5);
-            tone(180, 0.3, 'square', 0.1, 340);
-          } else {
-            e.summonCd = 2.5;
-          }
-        }
-      }
+      updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy);
       // 半血狂怒：提速、攻击更密、光环转红
       if(!e.enraged && e.hp < e.maxHp * 0.5){
         e.enraged = true;
@@ -2342,6 +2477,162 @@ function updateEnemies(dt){
         e.kx -= kx * 200; e.ky -= ky * 200;
       }
     }
+  }
+}
+
+// ---------------- BOSS AI（按 bossKind 分派，弹幕规模随 bossTier 增强） ----------------
+function updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  const kind = e.bossKind || 0;
+  const tier = e.bossTier || 1;
+  const pw = 1 + 0.18 * (tier - 1);
+  const bCol = e.color;
+  const aim = Math.atan2(dy, dx);
+  const shot = (a, sp, rr, dm, cc, extra) => {
+    const o = { x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
+      vx: Math.cos(a) * sp * pw, vy: Math.sin(a) * sp * pw, r: rr, dmg: dm * pw, life: 5.5, color: cc };
+    if(extra) Object.assign(o, extra);
+    mkEBullet(o);
+  };
+  const summon = (cap, cdN, cdE, typeFn, label) => {
+    e.summonCd -= dt * slow;
+    if(e.summonCd > 0 || e.spawnT > 0) return;
+    let adds = 0;
+    for(const o of enemies) if(o.master === 'boss') adds++;
+    if(adds >= (e.enraged ? cap[1] : cap[0])){ e.summonCd = 2.5; return; }
+    e.summonCd = (e.enraged ? cdE : cdN) / Math.sqrt(pw);
+    const n2 = e.enraged ? 4 : 3;
+    for(let k = 0; k < n2; k++){
+      const a = e.wob + k * TAU / n2;
+      spawnEnemyAt(typeFn(),
+        clamp(e.x + Math.cos(a) * (e.r + 34), 30, world.w - 30),
+        clamp(e.y + Math.sin(a) * (e.r + 34), 30, world.h - 30), false, 'boss');
+    }
+    addFloat(e.x, e.y - e.r - 20, label, 0xff6fe0, 15);
+    spawnRing(e.x, e.y, bCol, 120, 0.5, 2.5);
+    tone(180, 0.3, 'square', 0.1, 340);
+  };
+
+  // 冲锋状态机（监督者 / 毁灭者 / 歼灭核心共用；毁灭者与歼灭核心可连锁多段）
+  e.chargeCd -= dt * slow * aggro;
+  if(e.tele > 0){
+    e.tele -= dt * slow;
+    spawnParticles(e.x, e.y, 2, bCol, 120, 0.4, 2.6);
+    if(e.tele <= 0){ e.chargeT = 0.75; e.dirX = nx; e.dirY = ny; SFX.charge(); spawnRing(e.x, e.y, bCol, 90, 0.3, 4); }
+    return;
+  }
+  if(e.chargeT > 0){
+    e.chargeT -= dt;
+    const cs = 950 * slow;
+    e.x += e.dirX * cs * dt; e.y += e.dirY * cs * dt;
+    spawnParticles(e.x, e.y, 2, bCol, 60, 0.3, 2.4);
+    state.shake = Math.max(state.shake, 3);
+    if(e.chargeT <= 0 && e.chainLeft > 0){ e.chainLeft--; e.tele = 0.38; }
+    return;
+  }
+
+  if(kind === 1){
+    // ---- 织网主母：中距环绕游走，减速网弹扇面 + 高频孵化蛛群 ----
+    const side = (e.id % 2 === 0) ? 1 : -1;
+    const dir = d > 320 ? 1 : (d < 240 ? -1 : 0);
+    e.x += (nx * dir + -ny * side * 0.8) * spd * dt;
+    e.y += (ny * dir + nx * side * 0.8) * spd * dt;
+    e.shootCd -= dt * slow * aggro;
+    if(e.shootCd <= 0 && e.spawnT <= 0){
+      e.shootCd = (e.enraged ? 1.9 : 2.6) / pw;
+      const n2 = Math.round((e.enraged ? 7 : 5) * Math.min(pw, 2));
+      for(let k = 0; k < n2; k++) shot(aim + (k - (n2 - 1) / 2) * 0.18, 190, 7, 9, 0x7fd4ff, { web: true });
+      addFloat(e.x, e.y - e.r - 16, '缚网', 0x7fd4ff, 13);
+      tone(420, 0.12, 'sawtooth', 0.08, 240);
+    }
+    summon([5, 7], 7.5, 5.5, () => Math.random() < 0.5 ? 'stinger' : 'weaver', '孵化蛛群');
+  } else if(kind === 2){
+    // ---- 毁灭者：高速逼近，双螺旋弹幕倾泻 + 连锁毁灭冲锋 ----
+    e.x += nx * spd * 1.15 * dt;
+    e.y += ny * spd * 1.15 * dt;
+    e.spiralT -= dt * slow * aggro;
+    if(e.spiralT <= 0 && e.spawnT <= 0){
+      e.spiralT = 0.13 / pw;
+      const arms = e.enraged ? 3 : 2;
+      for(let k = 0; k < arms; k++) shot(e.wob * 1.9 + k * TAU / arms, 235, 7, 10, 0xffa73d);
+    }
+    if(e.chargeCd <= 0 && e.spawnT <= 0 && d > 200){
+      e.chargeCd = (e.enraged ? rand(4, 5.5) : rand(5.5, 7.5)) / Math.sqrt(pw);
+      e.chainLeft = (e.enraged ? 3 : 2) + (tier >= 3 ? 1 : 0);
+      e.tele = 0.5;
+      spawnRing(e.x, e.y, bCol, 120, 0.55, 3);
+      addFloat(e.x, e.y - e.r - 20, '!! 毁灭冲锋', bCol, 14);
+    }
+  } else if(kind === 3){
+    // ---- 风暴先知：漂浮环绕 + 周期闪现，旋转双螺旋与带缺口的环形弹幕 ----
+    const side3 = (e.id % 2 === 0) ? 1 : -1;
+    e.x += (nx * 0.5 + -ny * side3 * 0.9) * spd * dt;
+    e.y += (ny * 0.5 + nx * side3 * 0.9) * spd * dt;
+    e.blinkCd -= dt * slow * aggro;
+    if(e.blinkCd <= 0 && e.spawnT <= 0){
+      e.blinkCd = (e.enraged ? 2.6 : 3.8) / Math.sqrt(pw);
+      spawnParticles(e.x, e.y, 24, bCol, 340, 0.5, 3);
+      spawnRing(e.x, e.y, bCol, 110, 0.4, 2.5);
+      const na = Math.random() * TAU, nd = rand(240, 380);
+      e.x = clamp(player.x + Math.cos(na) * nd, e.r + 30, world.w - e.r - 30);
+      e.y = clamp(player.y + Math.sin(na) * nd, e.r + 30, world.h - e.r - 30);
+      spawnParticles(e.x, e.y, 24, bCol, 340, 0.5, 3);
+      spawnSparks(e.x, e.y, 8, bCol, 1.4);
+      addFloat(e.x, e.y - e.r - 18, '闪现', bCol, 14);
+      tone(680, 0.18, 'sine', 0.12, 180);
+    }
+    e.spiralT -= dt * slow * aggro;
+    if(e.spiralT <= 0 && e.spawnT <= 0){
+      e.spiralT = 0.16 / pw;
+      for(let k = 0; k < 2; k++) shot(e.wob * 1.3 + k * Math.PI, 205, 7, 10, 0xd08cff);
+    }
+    e.ringCd -= dt * slow * aggro;
+    if(e.ringCd <= 0 && e.spawnT <= 0){
+      e.ringCd = (e.enraged ? 3.2 : 4.6) / pw;
+      const n2 = Math.round(20 * Math.min(pw, 2.2));
+      const gapA = Math.random() * TAU;
+      for(let k = 0; k < n2; k++){
+        const a = k * TAU / n2;
+        let dd = Math.abs(((a - gapA) % TAU + TAU) % TAU);
+        if(dd > Math.PI) dd = TAU - dd;
+        if(dd < 0.55) continue;
+        shot(a, 175, 7, 12, 0xb06bff);
+      }
+      spawnRing(e.x, e.y, bCol, 130, 0.5, 2.5);
+      addFloat(e.x, e.y - e.r - 20, '风暴环', bCol, 14);
+      tone(180, 0.3, 'sawtooth', 0.1, 60);
+    }
+  } else {
+    // ---- 监督者（kind 0）与歼灭核心（kind 4）：瞄准弹幕 + 冲锋 + 召唤；核心额外带螺旋臂 ----
+    e.x += nx * spd * dt;
+    e.y += ny * spd * dt;
+    e.shootCd -= dt * slow * aggro;
+    if(e.shootCd <= 0 && e.spawnT <= 0){
+      e.shootCd = (e.enraged ? 1.6 : 2.2) / pw;
+      e.shotToggle = (e.shotToggle + 1) % 2;
+      if(e.shotToggle === 0){
+        for(let k = -2; k <= 2; k++) shot(aim + k * 0.26, 250, 8, 13, bCol);
+      } else {
+        const n2 = Math.round((e.enraged ? 14 : 10) * Math.min(pw, 2));
+        for(let k = 0; k < n2; k++) shot(e.wob + k * TAU / n2, 210, 7, 11, 0xff6fe0);
+      }
+      tone(220, 0.2, 'sawtooth', 0.12, 90);
+    }
+    if(kind === 4){
+      e.spiralT -= dt * slow * aggro;
+      if(e.spiralT <= 0 && e.spawnT <= 0){
+        e.spiralT = 0.17 / pw;
+        for(let k = 0; k < 2; k++) shot(-e.wob * 1.6 + k * Math.PI, 215, 7, 10, 0xffe45c);
+      }
+    }
+    if(e.chargeCd <= 0 && e.spawnT <= 0 && d > 220){
+      e.chargeCd = (e.enraged ? rand(4.5, 6.5) : rand(6.5, 9.5)) / Math.sqrt(pw);
+      if(kind === 4) e.chainLeft = e.enraged ? 2 : 1;
+      e.tele = 0.55;
+      spawnRing(e.x, e.y, bCol, 120, 0.55, 3);
+      addFloat(e.x, e.y - e.r - 20, '!! 冲锋', bCol, 14);
+    }
+    summon([4, 6], 10.5, 7.5,
+      () => (e.enraged && state.wave >= 10) || kind === 4 ? 'stinger' : 'mini', '召唤');
   }
 }
 
@@ -2420,6 +2711,8 @@ function update(dt){
   }
 
   if(state.mode === 'playing'){
+    state.stasis = Math.max(0, state.stasis - dt);
+    state.magnetize = Math.max(0, state.magnetize - dt);
     updatePlayer(dt);
     updateBullets(dt);
     updateEnemies(dt);
@@ -3420,6 +3713,56 @@ function drawHUD(){
     }
   });
 
+  // ---- 常驻技能格（选卡获得的主动技能，1/2/3 释放） ----
+  const asz = 42, agap = 10;
+  const ax0 = sx0(0) - (asz * 3 + agap * 2 + 18);
+  const ay = syy + 2;
+  for(let i = 0; i < 3; i++){
+    const ax = ax0 + i * (asz + agap);
+    const s = p.actives[i];
+    const def = s ? ACTIVE_BY_ID[s.id] : null;
+    const col = def ? def.c : 0x3d4b60;
+    hudG.roundRect(ax, ay, asz, asz, 8)
+      .fill({ color: 0x0a0e1a, alpha: def ? 0.85 : 0.45 })
+      .stroke({ width: 1.4, color: col, alpha: def ? 0.9 : 0.4 });
+    // 角括号（与选卡界面同语言）
+    const abl = 7;
+    hudG.moveTo(ax - 2, ay - 2 + abl).lineTo(ax - 2, ay - 2).lineTo(ax - 2 + abl, ay - 2)
+      .moveTo(ax + asz + 2 - abl, ay - 2).lineTo(ax + asz + 2, ay - 2).lineTo(ax + asz + 2, ay - 2 + abl)
+      .moveTo(ax - 2, ay + asz + 2 - abl).lineTo(ax - 2, ay + asz + 2).lineTo(ax - 2 + abl, ay + asz + 2)
+      .moveTo(ax + asz + 2 - abl, ay + asz + 2).lineTo(ax + asz + 2, ay + asz + 2).lineTo(ax + asz + 2, ay + asz + 2 - abl)
+      .stroke({ width: 1, color: col, alpha: def ? 0.6 : 0.25 });
+    glowAt(13 + i, ax + asz / 2, ay + asz / 2, asz * 2.2, asz * 2.2, col, def ? (s.cd > 0 ? 0.04 : 0.15) : 0);
+    if(s && s.cd > 0){
+      hudG.moveTo(ax + asz / 2, ay + asz / 2);
+      hudG.arc(ax + asz / 2, ay + asz / 2, asz, -Math.PI / 2, -Math.PI / 2 + TAU * clamp(s.cd / def.cd, 0, 1));
+      hudG.closePath().fill({ color: 0x000000, alpha: 0.55 });
+    }
+    // 阶位刻度点
+    if(s){
+      for(let k = 0; k < s.lv; k++){
+        hudG.circle(ax + asz / 2 + (k - (s.lv - 1) / 2) * 6, ay + asz - 4, 1.4).fill({ color: col, alpha: 0.95 });
+      }
+    }
+    const kT = textHUD.actKey[i];
+    kT.text = String(i + 1);
+    kT.style.fill = col;
+    kT.position.set(ax + asz / 2, ay + 2);
+    kT.visible = true;
+    const nT = textHUD.actName[i];
+    nT.text = def ? def.n : '空';
+    nT.style.fill = def ? 0xd8e6f5 : 0x3d4b60;
+    nT.position.set(ax + asz / 2, ay + asz / 2 + 1);
+    nT.visible = true;
+    const cT = textHUD.actCd[i];
+    if(s && s.cd > 0){
+      cT.text = s.cd.toFixed(1);
+      cT.style.fill = 0xffffff;
+      cT.position.set(ax + asz / 2, ay + asz / 2 - 7);
+      cT.visible = true;
+    } else cT.visible = false;
+  }
+
   drawMinimap();
   drawBossBar();
 }
@@ -3475,7 +3818,7 @@ function drawBossBar(){
   if(!b){ HT.boss.text = ''; return; }
   const bw = Math.min(470, W * 0.56), bx = W / 2 - bw / 2, by = H - 106, bh = 22;
   const k = clamp(b.hp / b.maxHp, 0, 1);
-  const barCol = b.enraged ? 0xff5e3d : 0xff2fd0;
+  const barCol = b.enraged ? 0xff5e3d : b.color;
   // 外框双线 + 底座
   hudG.roundRect(bx - 4, by - 4, bw + 8, bh + 8, 12).stroke({ width: 1, color: barCol, alpha: 0.3 });
   hudG.roundRect(bx, by, bw, bh, 9).fill({ color: 0x0a0614, alpha: 0.82 });
@@ -3495,7 +3838,8 @@ function drawBossBar(){
     hudG.moveTo(ex, by + bh / 2 - 7).lineTo(ex + 7, by + bh / 2).lineTo(ex, by + bh / 2 + 7).lineTo(ex - 7, by + bh / 2).closePath()
       .stroke({ width: 1.2, color: barCol, alpha: 0.9 });
   }
-  HT.boss.text = b.enraged ? '狂 怒 · 监 督 者' : '监 督 者  O V E R S E E R';
+  const bk = BOSS_KINDS[b.bossKind || 0];
+  HT.boss.text = b.enraged ? `狂 怒 · ${bk.name}` : `${bk.name}  ${bk.en}`;
   HT.boss.style.fill = b.enraged ? 0xffb09a : 0xffd7f4;
   HT.boss.position.set(W / 2, by - 18);
   // 名称两侧装饰线
@@ -3622,13 +3966,13 @@ function buildCardUI(){
   tg.circle(W / 2 + 138, tgy, 2.4).fill({ color: 0xffe45c, alpha: 0.85 });
   cardUI.addChild(tg);
 
-  const title = new Pixi.Text({ text: `等级提升  LV ${state.level}`, style: { fontFamily: '"Courier New", monospace', fontSize: 22, fontWeight: 'bold', fill: 0xffe45c } });
+  const title = new Pixi.Text({ text: state.cardTitle || `等级提升  LV ${state.level}`, style: { fontFamily: '"Courier New", monospace', fontSize: 22, fontWeight: 'bold', fill: 0xffe45c } });
   title.anchor.set(0.5, 0);
   title.position.set(W / 2, H / 2 - 202);
   neon(title, 0xffe45c, 16);
   cardUI.addChild(title);
 
-  const sub = new Pixi.Text({ text: '← → 选择 · 回车 / 空格 确认 · 1 2 3 直选 · 鼠标可点', style: { fontFamily: '"Courier New", monospace', fontSize: 12, fontWeight: 'bold', fill: 0x6d7f96 } });
+  const sub = new Pixi.Text({ text: state.cardSub || '← → 选择 · 回车 / 空格 确认 · 1 2 3 直选 · 鼠标可点', style: { fontFamily: '"Courier New", monospace', fontSize: 12, fontWeight: 'bold', fill: 0x6d7f96 } });
   sub.anchor.set(0.5, 0);
   sub.position.set(W / 2, H / 2 - 166);
   cardUI.addChild(sub);
@@ -3691,14 +4035,13 @@ function buildCardUI(){
       sideT.position.set(24, CH - 76);
       holder.addChild(sideT);
     }
-
-    const hit = new Pixi.Graphics();
-    hit.rect(0, 0, CW, CH).fill({ color: 0xffffff, alpha: 0.001 });
-    hit.eventMode = 'static';
-    hit.cursor = 'pointer';
-    hit.on('pointertap', () => pickOffer(i));
-    hit.on('pointerover', () => { state.sel = i; applyCardHighlight(); });
-    holder.addChild(hit);
+    if(o.def.skill){
+      const badge = textLine('◈ 常驻技能', 11, dc);
+      badge.anchor.set(1, 0);
+      badge.position.set(CW - 14, 12);
+      neon(badge, dc, 8);
+      holder.addChild(badge);
+    }
 
     CARD_UI.push({ i, col: tc, dc, g, glow, holder, hint: hintT, ring, side: !!o.def.s,
       w: CW, h: CH, cx, baseY: cy, born: state.time + i * 0.08, curScale: 1 });
@@ -3707,6 +4050,26 @@ function buildCardUI(){
 
   cardUI.scale.set(scale);
   if(scale < 1) cardUI.position.set((W - W * scale) / 2, (H - H * scale) / 2);
+
+  // 鼠标命中：在 cardUI 上做手动矩形测试（半透明子元素可能拦截 Pixi 事件派发，
+  // 手动测试不受遮挡影响，三张卡均可稳定点选/悬停）
+  cardUI.eventMode = 'static';
+  cardUI.hitArea = new Pixi.Rectangle(0, 0, W, H);
+  const hitCard = ev => {
+    const pt = cardUI.toLocal(ev.global);
+    for(const r of CARD_RECTS){
+      if(pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h) return r.i;
+    }
+    return -1;
+  };
+  cardUI.on('pointerdown', ev => {
+    const i = hitCard(ev);
+    if(i >= 0) pickOffer(i);
+  });
+  cardUI.on('pointermove', ev => {
+    const i = hitCard(ev);
+    if(i >= 0 && i !== state.sel){ state.sel = i; applyCardHighlight(); }
+  });
   applyCardHighlight();
 }
 
@@ -3743,7 +4106,7 @@ function buildScreens(){
   t2.anchor.set(0.5, 0);
   neon(t2, 0xffe45c, 22);
   const help = new Pixi.Text({
-    text: 'WASD 推进弹珠 · 撞墙反弹叠加速\nJ 发射弹珠 · 子弹弹墙变强\nK 冲刺撞击 · 冲刺时无敌\nH 消耗能量修复护甲\n空格 过载模式 · 双倍伤害与射速\nESC 暂停战斗\n\n击破获得经验 · 升级三选一强化卡（61 种效果 × 5 阶）\n选卡：← → 切换 · 回车/空格 确认 · 1 2 3 直选 · 鼠标可点\n部分强力卡带有副作用 —— 卡有价，选之前先看清',
+    text: 'WASD 推进弹珠 · 撞墙反弹叠加速\nJ 发射弹珠 · 子弹弹墙变强\nK 冲刺撞击 · 冲刺时无敌\nH 消耗能量修复护甲\n空格 过载模式 · 双倍伤害与射速\nESC 暂停战斗\n\n击破获得经验 · 升级三选一强化卡（61 种效果 × 5 阶）\n每次升级必出一张常驻技能卡 —— 选中后进入左下技能格，1 2 3 释放\n技能格满后再选常驻技能需替换其一 · 重复选择同一技能则升阶\n选卡：← → 切换 · 回车/空格 确认 · 1 2 3 直选 · 鼠标可点\n部分强力卡带有副作用 —— 卡有价，选之前先看清',
     style: { fontFamily: '"Courier New", monospace', fontSize: 15, fontWeight: 'bold', fill: 0xc8e6ff, align: 'center', lineHeight: 24 }
   });
   help.anchor.set(0.5, 0);
@@ -3790,7 +4153,7 @@ function layoutScreens(){
   p.t1.position.set(W / 2, H / 2 - 210);
   p.t2.position.set(W / 2, H / 2 - 138);
   p.help.position.set(W / 2, H / 2 - 90);
-  p.go.position.set(W / 2, H / 2 + 168);
+  p.go.position.set(W / 2, H / 2 + 214);
   const d = SCR.dead._parts;
   d.d1.position.set(W / 2, H / 2 - 120);
   d.d2.position.set(W / 2, H / 2 - 40);
@@ -3804,7 +4167,7 @@ function layoutScreens(){
   td.moveTo(W / 2 + 200, ty2).lineTo(W / 2 + 320, ty2).stroke({ width: 1, color: 0xffe45c, alpha: 0.4 });
   td.circle(W / 2 - 196, ty2, 2).fill({ color: 0xffe45c, alpha: 0.7 });
   td.circle(W / 2 + 196, ty2, 2).fill({ color: 0xffe45c, alpha: 0.7 });
-  const bw2 = 580, bh2 = 258, bx2 = W / 2 - bw2 / 2, by2 = H / 2 - 102, bl2 = 16;
+  const bw2 = 580, bh2 = 332, bx2 = W / 2 - bw2 / 2, by2 = H / 2 - 102, bl2 = 16;
   td.moveTo(bx2, by2 + bl2).lineTo(bx2, by2).lineTo(bx2 + bl2, by2)
     .moveTo(bx2 + bw2 - bl2, by2).lineTo(bx2 + bw2, by2).lineTo(bx2 + bw2, by2 + bl2)
     .moveTo(bx2, by2 + bh2 - bl2).lineTo(bx2, by2 + bh2).lineTo(bx2 + bl2, by2 + bh2)
@@ -3937,6 +4300,9 @@ function frame(ticker){
   for(const t of textHUD.skills) t.visible = showHud;
   for(const t of textHUD.skillsName) t.visible = showHud;
   for(const t of textHUD.skillsCd) t.visible = showHud;
+  for(const t of textHUD.actKey) t.visible = showHud;
+  for(const t of textHUD.actName) t.visible = showHud;
+  for(const t of textHUD.actCd) t.visible = showHud;
   if(!showHud){
     for(const b of HS.skBox) b.visible = false;
     HS.skOn.visible = false;
@@ -3990,7 +4356,7 @@ let novaEl = document.getElementById('nova');
 const WALL = {};
 const POSTS = [];
 const MARKERS = [];
-const textHUD = { skills: [], skillsName: [], skillsCd: [], visible: true };
+const textHUD = { skills: [], skillsName: [], skillsCd: [], actKey: [], actName: [], actCd: [], visible: true };
 
 async function main(){
   const P = await ensurePixi();
@@ -4192,6 +4558,21 @@ async function main(){
     textHUD.skillsCd.push(cd);
   }
   textHUD.container = null;
+  // 常驻技能格文字（1/2/3 键）
+  for(let i = 0; i < 3; i++){
+    const t = new Pixi.Text({ text: '', style: { fontFamily: '"Courier New", monospace', fontSize: 11, fontWeight: 'bold', fill: 0xffffff } });
+    t.anchor.set(0.5, 0);
+    hudLayer.addChild(t);
+    textHUD.actKey.push(t);
+    const n = new Pixi.Text({ text: '', style: { fontFamily: '"Courier New", monospace', fontSize: 8, fontWeight: 'bold', fill: 0xd8e6f5 } });
+    n.anchor.set(0.5, 0);
+    hudLayer.addChild(n);
+    textHUD.actName.push(n);
+    const cd = new Pixi.Text({ text: '', style: { fontFamily: '"Courier New", monospace', fontSize: 11, fontWeight: 'bold', fill: 0xffffff } });
+    cd.anchor.set(0.5, 0);
+    hudLayer.addChild(cd);
+    textHUD.actCd.push(cd);
+  }
 
   for(let i = 0; i < 16; i++){
     const m = new Pixi.Sprite(TEX.chev);
