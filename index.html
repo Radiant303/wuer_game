@@ -2421,6 +2421,8 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     sprites: [halo, rim, body, darkCore, core, hpBg, hpFill, portal, aura, bloom, orbit, eye, arc, eliteRim, aura2]
   };
   enemies.push(e);
+  // 池精灵可能残留血条槽位的 anchor(0, 0.5)，统一重置（血条槽位每帧会自行设置）
+  for(const s of e.sprites) if(s) s.anchor.set(0.5);
   spawnRing(x, y, b.color, Math.min(138, b.r * 3.4), 0.45, 2.5);
   if(elite){
     spawnRing(x, y, 0xffc83d, Math.min(138, e.r * 3.8), 0.6, 2.5);
@@ -3729,6 +3731,8 @@ function syncEnemies(){
     if(hpFill) hpFill.blendMode = 'normal';
 
     // 外光（参考版：半径 3r 的同色辉光）
+    // 贴图必须每帧重设：POOL.enemy 全槽位共享，回收的精灵可能残留 ringBig/pBossBig 等贴图
+    halo.texture = TEX.glow;
     halo.position.set(e.x, e.y);
     halo.scale.set(e.r * 6 / 128);
     halo.tint = e.color;
