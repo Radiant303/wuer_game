@@ -1318,6 +1318,7 @@ function comboNova(x, y){
     const b = ebullets[i];
     if(Math.hypot(b.x - x, b.y - y) < R){
       spawnParticles(b.x, b.y, 3, 0xb06bff, 160, 0.3, 2);
+      freeEBullet(b);
       ebullets.splice(i, 1);
     }
   }
