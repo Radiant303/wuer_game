@@ -999,6 +999,8 @@ let bullets = [], ebullets = [], enemies = [], particles = [], floats = [],
     pillars = [], pickups = [], rings = [], nebulae = [], dust = [],
     storms = [], meteors = [], sparks = [], shards = [], starsFar = [], starsNear = [],
     wallPulses = [], pluses = [];
+let walls = [], zones = [], mapLabel = '';
+let gmap = null, gmapFx = null;
 
 const wallGlow = { l: 0, r: 0, t: 0, b: 0 };
 const POWER_TYPES = ['triple', 'pierce', 'rapid', 'homing'];
@@ -1325,7 +1327,7 @@ function comboNova(x, y){
 function makeNebulae(){
   for(const n of nebulae) rel(n.spr);
   nebulae = [];
-  const cols = [0x1b3fd8, 0x8a1bd8, 0x0f8f8a, 0xd81b6a, 0x1d7fd8, 0x4a1bd8, 0x2b7fd8];
+  const cols = curTheme.bg || [0x1b3fd8, 0x8a1bd8, 0x0f8f8a, 0xd81b6a, 0x1d7fd8, 0x4a1bd8, 0x2b7fd8];
   for(let i = 0; i < 7; i++){
     const spr = POOL.neb.get();
     if(!spr) break;
@@ -1508,28 +1510,536 @@ function updateCamera(dt){
   cam.zoom = lerp(cam.zoom, tz, 1 - Math.exp(-5 * dt));
 }
 
-// ---------------- 场地 ----------------
-function makePillars(){
+// ---------------- 场地：随机地图生成 ----------------
+const SPAWN_SAFE = 205;          // 出生点保护半径
+const MAP_RANDOM = true;         // 改 false 立刻退回原来的固定场地（7 根柱子，无墙 / 无地形区）
+const MAX_PILLARS = 20, MAX_WALLS = 12, MAX_ZONES = 3;   // 柱/墙上限上调，给蜂窝·靶心·螺旋等大地图留空间
+const MAP_SWITCH_WAVES = 3;             // 每 N 波随机换一张新地图（0=关闭；BOSS 波不换）
+
+function clearMap(){
   for(const p of pillars) for(const s of p.sprites) rel(s);
-  pillars = [];
-  const n = 7;
-  let guard = 0;
-  while(pillars.length < n && guard < 400){
-    guard++;
-    const x = rand(110, Math.max(120, world.w - 110));
-    const y = rand(110, Math.max(120, world.h - 110));
-    if(Math.hypot(x - world.w / 2, y - world.h / 2) < 190) continue;
-    if(pillars.some(p => Math.hypot(p.x - x, p.y - y) < 210)) continue;
-    const halo = POOL.pillar.get(), ring = POOL.pillar.get(), ring2 = POOL.pillar.get();
-    const d1 = POOL.pillar.get(), d2 = POOL.pillar.get(), inner = POOL.pillar.get();
-    if(!halo || !ring || !ring2 || !d1 || !d2 || !inner) break;
-    pillars.push({
-      x, y, r: rand(24, 40),
-      phase: Math.random() * TAU, spin: rand(-0.6, 0.6),
-      ringA: Math.random() * TAU, shape: Math.floor(rand(0, 3)),
-      sprites: [halo, ring, ring2, d1, d2, inner]
-    });
+  pillars = []; walls = []; zones = [];
+}
+
+function addPillar(x, y, r, sides){
+  if(pillars.length >= MAX_PILLARS) return false;
+  const halo = POOL.pillar.get(), ring = POOL.pillar.get(), ring2 = POOL.pillar.get();
+  const d1 = POOL.pillar.get(), d2 = POOL.pillar.get(), inner = POOL.pillar.get();
+  if(!halo || !ring || !ring2 || !d1 || !d2 || !inner){
+    for(const s of [halo, ring, ring2, d1, d2, inner]) if(s) rel(s);
+    return false;
   }
+  const sd = sides >= 3 ? Math.floor(sides) : 0;      // >=3 画成正多边形，否则圆形
+  const cr = sd ? r * Math.cos(Math.PI / sd) : r;      // 多边形碰撞用内切圆，手感宽容不卡角
+  pillars.push({
+    x, y, r, cr, sides: sd,
+    phase: Math.random() * TAU, spin: rand(-0.6, 0.6),
+    ringA: Math.random() * TAU, shape: Math.floor(rand(0, 3)),
+    sprites: [halo, ring, ring2, d1, d2, inner]
+  });
+  return true;
+}
+
+function addWall(x, y, w, h, rot){
+  if(walls.length >= MAX_WALLS) return false;
+  const PAD = 78;                       // 与边界保持距离，别堵住敌人出生带
+  let ww = w, hh = h;
+  const cos = Math.abs(Math.cos(rot || 0)), sin = Math.abs(Math.sin(rot || 0));
+  let ex = cos * ww / 2 + sin * hh / 2, ey = sin * ww / 2 + cos * hh / 2;
+  const availW = world.w - PAD * 2, availH = world.h - PAD * 2;
+  if(ex * 2 > availW || ey * 2 > availH){
+    const k = Math.min(availW / (ex * 2), availH / (ey * 2));
+    ww *= k; hh *= k;
+    ex = cos * ww / 2 + sin * hh / 2; ey = sin * ww / 2 + cos * hh / 2;
+  }
+  if(ww < 70 || hh < 12) return false;
+  const nx = clamp(x, PAD + ex, Math.max(PAD + ex, world.w - PAD - ex));
+  const ny = clamp(y, PAD + ey, Math.max(PAD + ey, world.h - PAD - ey));
+  // 别把出生点埋在墙里（精确 OBB 检测，斜墙也拦得住）
+  const probe = { x: nx, y: ny, w: ww, h: hh, rot: rot || 0 };
+  if(obbHit(probe, world.w / 2, world.h / 2, SPAWN_SAFE)) return false;
+  walls.push({ x: nx, y: ny, w: ww, h: hh, rot: rot || 0, phase: Math.random() * TAU, tone: rand(0, 1) });
+  return true;
+}
+
+function addZone(x, y, r, kind){
+  if(zones.length >= MAX_ZONES) return false;
+  zones.push({ x, y, r, kind, phase: Math.random() * TAU });
+  return true;
+}
+
+// 该点是否与出生点 / 已有障碍 / 边界保持距离
+function spotFree(x, y, r){
+  if(Math.hypot(x - world.w / 2, y - world.h / 2) < SPAWN_SAFE + r) return false;
+  if(x < r + 100 || x > world.w - r - 100 || y < r + 100 || y > world.h - r - 100) return false;
+  for(const p of pillars) if(Math.hypot(p.x - x, p.y - y) < p.cr + r + 46) return false;
+  for(const w of walls){
+    const rr = Math.hypot(w.w, w.h) / 2;
+    if(Math.hypot(w.x - x, w.y - y) < rr + r + 34) return false;
+  }
+  return true;
+}
+
+function scatterPillars(n, rMin, rMax){
+  let guard = 0;
+  while(pillars.length < n && guard < 300){
+    guard++;
+    const r = rand(rMin, rMax);
+    const x = rand(r + 100, world.w - r - 100), y = rand(r + 100, world.h - r - 100);
+    if(!spotFree(x, y, r)) continue;
+    addPillar(x, y, r);
+  }
+}
+
+// 标题界面用的固定柱子布局（开局由 generateMap 重新随机）
+function makePillars(){
+  scatterPillars(7, 24, 40);
+}
+
+// ---------- 地图主题（配色） ----------
+// 每种地图一套配色：accent 主霓虹 / accent2 次色 / glow 高光边 / fill 障碍身 / bg 背景星云 / label 提示字色
+const DEFAULT_THEME = {
+  accent: 0x5ac8ff, accent2: 0x8fe0ff, glow: 0xd6f4ff, fill: 0x06121b,
+  bg: [0x1b3fd8, 0x8a1bd8, 0x0f8f8a, 0xd81b6a, 0x1d7fd8, 0x4a1bd8, 0x2b7fd8],
+  label: 0x5ffbf1
+};
+const THEMES = {
+  scatter:  { accent:0x5ac8ff, accent2:0x8fe0ff, glow:0xd6f4ff, fill:0x06121b, bg:[0x1d7fd8,0x2b7fd8,0x0f8f8a,0x1b3fd8], label:0x9fe8ff },
+  ring:     { accent:0xb46bff, accent2:0xd78aff, glow:0xecd0ff, fill:0x120a1e, bg:[0x8a1bd8,0x4a1bd8,0xd81b9a,0x5a1bd8], label:0xd78aff },
+  corridor: { accent:0xffa63d, accent2:0xffc86b, glow:0xffe6c0, fill:0x180f04, bg:[0xd87a1b,0xd8a01b,0xd8521b,0x8a5a1b], label:0xffc86b },
+  cross:    { accent:0x4dffa0, accent2:0x8fffc8, glow:0xd0ffe8, fill:0x05170e, bg:[0x0f8f4a,0x0f8f8a,0x1bd87a,0x0f8f6a], label:0x8fffc8 },
+  fortress: { accent:0x6fb8ff, accent2:0x9fd0ff, glow:0xdcecff, fill:0x080f16, bg:[0x1d5fd8,0x2b7fd8,0x1b7fd8,0x3a6bd8], label:0x9fd0ff },
+  shards:   { accent:0xff5e6b, accent2:0xff9aa4, glow:0xffd4d8, fill:0x180508, bg:[0xd81b3d,0xd81b6a,0xd83a5a,0x8a1b3d], label:0xff9aa4 },
+  grove:    { accent:0xa8ff5a, accent2:0xc8ff8f, glow:0xe8ffd0, fill:0x0d1704, bg:[0x6bd81b,0x8fd81b,0x4ad81b,0x9fd81b], label:0xc8ff8f },
+  spiral:   { accent:0x3de8d8, accent2:0x6bffe8, glow:0xc4fff4, fill:0x04171a, bg:[0x0f8f8a,0x1bd8c8,0x0f8fd8,0x1b8fa8], label:0x6bffe8 },
+  twin:     { accent:0x5ad8ff, accent2:0x8fe8ff, glow:0xdaf4ff, fill:0x05111a, bg:[0x1b7fd8,0x1bd8e8,0x2b7fd8,0x0f8fd8], label:0x8fe8ff },
+  hive:     { accent:0xffc83d, accent2:0xffe08a, glow:0xfff2cc, fill:0x171204, bg:[0xd8a01b,0xd88a1b,0xd8c01b,0x8a6a1b], label:0xffe08a },
+  crystal:  { accent:0xff5ad0, accent2:0xff8ae8, glow:0xffd6f4, fill:0x170517, bg:[0xd81ba8,0xd81b6a,0xa81bd8,0xd81b8a], label:0xff8ae8 },
+  bullseye: { accent:0xff7a3d, accent2:0xffa86b, glow:0xffdcc4, fill:0x170c04, bg:[0xd8521b,0xd87a1b,0xd8a03d,0xa84a1b], label:0xffa86b }
+};
+let curTheme = DEFAULT_THEME;
+
+// ---------- 地图原型 ----------
+const MAP_TYPES = [
+  {
+    id: 'scatter', name: '碎石散布',
+    build(){
+      scatterPillars(Math.floor(rand(4, 9)), 22, 46);
+    }
+  },
+  {
+    id: 'ring', name: '环形竞技场',
+    build(){
+      const n = Math.floor(rand(5, 9));
+      const R = rand(Math.min(230, world.w * 0.20), Math.min(360, world.w * 0.30));
+      const off = rand(-0.5, 0.5);
+      const cx = world.w / 2 + Math.cos(off) * rand(0, 70);
+      const cy = world.h / 2 + Math.sin(off) * rand(0, 70);
+      const a0 = Math.random() * TAU;
+      for(let i = 0; i < n; i++){
+        const a = a0 + i / n * TAU + rand(-0.09, 0.09);
+        const x = clamp(cx + Math.cos(a) * R, 90, world.w - 90);
+        const y = clamp(cy + Math.sin(a) * R, 90, world.h - 90);
+        if(!spotFree(x, y, 26)) continue;
+        addPillar(x, y, rand(24, 40));
+      }
+      // 环外再点缀几根
+      scatterPillars(pillars.length + Math.floor(rand(0, 3)), 20, 34);
+    }
+  },
+  {
+    id: 'corridor', name: '断裂走廊',
+    build(){
+      const n = Math.floor(rand(2, 5));
+      for(let i = 0; i < n; i++){
+        const horiz = Math.random() < 0.5;
+        const thick = rand(18, 30);
+        const len = (horiz ? world.w : world.h) * rand(0.30, 0.58);
+        const rot = (horiz ? 0 : Math.PI / 2) + rand(-0.22, 0.22);
+        let x, y, ok = false;
+        for(let g = 0; g < 60 && !ok; g++){
+          x = horiz ? rand(world.w * 0.30, world.w * 0.70) : rand(150, world.w - 150);
+          y = horiz ? rand(150, world.h - 150) : rand(world.h * 0.30, world.h * 0.70);
+          ok = spotFree(x, y, Math.max(len, thick) / 2 * 0.72);
+        }
+        if(ok) addWall(x, y, len, thick, rot);
+      }
+      scatterPillars(Math.floor(rand(2, 5)), 22, 38);
+    }
+  },
+  {
+    id: 'cross', name: '十字隔间',
+    build(){
+      // 水平墙：中间留缺口，分两段
+      const gy = world.h / 2 + rand(-90, 90);
+      const gap = rand(190, 280);
+      const thick = rand(20, 28);
+      const segW = (world.w - gap) / 2 - 90;
+      if(segW > 90){
+        const gx = world.w / 2 + rand(-60, 60);
+        addWall(gx - gap / 2 - segW / 2, gy, segW, thick, rand(-0.06, 0.06));
+        addWall(gx + gap / 2 + segW / 2, gy, segW, thick, rand(-0.06, 0.06));
+      }
+      // 垂直墙：同样留缺口
+      const gx2 = world.w / 2 + rand(-90, 90);
+      const gap2 = rand(200, 300);
+      const segH = (world.h - gap2) / 2 - 80;
+      if(segH > 80){
+        const gy2 = world.h / 2 + rand(-60, 60);
+        addWall(gx2, gy2 - gap2 / 2 - segH / 2, thick, segH, rand(-0.06, 0.06));
+        addWall(gx2, gy2 + gap2 / 2 + segH / 2, thick, segH, rand(-0.06, 0.06));
+      }
+      scatterPillars(Math.floor(rand(2, 5)), 22, 38);
+    }
+  },
+  {
+    id: 'fortress', name: '双生要塞',
+    build(){
+      const flip = Math.random() < 0.5;
+      const spots = flip
+        ? [[world.w * 0.26, world.h * 0.28], [world.w * 0.74, world.h * 0.72]]
+        : [[world.w * 0.74, world.h * 0.28], [world.w * 0.26, world.h * 0.72]];
+      for(const [bx, by] of spots){
+        const n = Math.floor(rand(3, 5));
+        const R = rand(80, 140);
+        const a0 = Math.random() * TAU;
+        for(let i = 0; i < n; i++){
+          const a = a0 + i / n * TAU + rand(-0.2, 0.2);
+          const x = clamp(bx + Math.cos(a) * R, 100, world.w - 100);
+          const y = clamp(by + Math.sin(a) * R, 100, world.h - 100);
+          if(!spotFree(x, y, 24)) continue;
+          addPillar(x, y, rand(24, 38));
+        }
+        // 要塞外侧护墙
+        const wl = rand(120, 220), th = rand(16, 26);
+        const dir = Math.atan2(world.h / 2 - by, world.w / 2 - bx);
+        const wx = clamp(bx + Math.cos(dir) * (R + 70), 130, world.w - 130);
+        const wy = clamp(by + Math.sin(dir) * (R + 70), 130, world.h - 130);
+        if(spotFree(wx, wy, Math.max(wl, th) / 2 * 0.7)) addWall(wx, wy, wl, th, dir + Math.PI / 2 + rand(-0.3, 0.3));
+      }
+      scatterPillars(pillars.length + Math.floor(rand(0, 3)), 20, 32);
+    }
+  },
+  {
+    id: 'shards', name: '碎片迷宫',
+    build(){
+      const n = Math.floor(rand(3, 7));
+      for(let i = 0; i < n; i++){
+        const len = rand(140, 300), thick = rand(16, 26);
+        const rot = Math.random() * Math.PI;
+        let ok = false, x = 0, y = 0;
+        for(let g = 0; g < 60 && !ok; g++){
+          x = rand(150, world.w - 150); y = rand(150, world.h - 150);
+          ok = spotFree(x, y, Math.max(len, thick) / 2 * 0.7);
+        }
+        if(ok) addWall(x, y, len, thick, rot);
+      }
+      scatterPillars(Math.floor(rand(2, 5)), 22, 40);
+    }
+  },
+  {
+    id: 'grove', name: '浮空柱林',
+    build(){
+      const cols = Math.floor(rand(3, 5)), rows = Math.floor(rand(2, 4));
+      const mx = world.w * 0.20, my = world.h * 0.22;
+      for(let i = 0; i < cols; i++){
+        for(let j = 0; j < rows; j++){
+          const x = mx + (world.w - mx * 2) * (cols === 1 ? 0.5 : i / (cols - 1)) + rand(-70, 70);
+          const y = my + (world.h - my * 2) * (rows === 1 ? 0.5 : j / (rows - 1)) + rand(-60, 60);
+          const r = rand(20, 34);
+          if(!spotFree(x, y, r)) continue;
+          addPillar(x, y, r);
+        }
+      }
+      if(pillars.length < 3) scatterPillars(4, 22, 38);
+    }
+  },
+  {
+    id: 'spiral', name: '螺旋迷宫',
+    build(){
+      const cx = world.w / 2, cy = world.h / 2;
+      const turns = rand(1.5, 2.3), arms = Math.floor(rand(11, 16));
+      const R0 = rand(70, 105), R1 = Math.min(world.w, world.h) * rand(0.42, 0.5);
+      const thick = rand(15, 23), segLen = rand(48, 78);
+      const dir = Math.random() < 0.5 ? 1 : -1, a0 = Math.random() * TAU;
+      for(let i = 0; i < arms; i++){
+        const f = arms > 1 ? i / (arms - 1) : 0;
+        const a = a0 + dir * f * turns * TAU;
+        const rad = R0 + (R1 - R0) * f;
+        const x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad;
+        if(Math.hypot(x - cx, y - cy) < SPAWN_SAFE + 20) continue;   // 别堵出生点
+        if(Math.random() < 0.22) continue;                            // 随机开缺口
+        if(spotFree(x, y, segLen * 0.5)) addWall(x, y, segLen, thick, a + dir * Math.PI / 2);
+      }
+      scatterPillars(Math.floor(rand(2, 5)), 20, 34);
+    }
+  },
+  {
+    id: 'twin', name: '双子回廊',
+    build(){
+      const vertical = Math.random() < 0.5;
+      const span = vertical ? world.h : world.w;
+      const cross = vertical ? world.w : world.h;
+      const gap = span * rand(0.34, 0.5), thick = rand(17, 25);
+      const segLen = (span - gap) / 2 - 90;
+      const o1 = cross * rand(0.28, 0.38), o2 = cross * rand(0.62, 0.72);
+      if(segLen > 90){
+        for(const off of [o1, o2]){
+          const c = span / 2;
+          if(vertical){
+            addWall(off, c - gap / 2 - segLen / 2, thick, segLen, Math.PI / 2 + rand(-0.05, 0.05));
+            addWall(off, c + gap / 2 + segLen / 2, thick, segLen, Math.PI / 2 + rand(-0.05, 0.05));
+          } else {
+            addWall(c - gap / 2 - segLen / 2, off, segLen, thick, rand(-0.05, 0.05));
+            addWall(c + gap / 2 + segLen / 2, off, segLen, thick, rand(-0.05, 0.05));
+          }
+        }
+      }
+      scatterPillars(Math.floor(rand(2, 5)), 20, 34);
+    }
+  },
+  {
+    id: 'hive', name: '蜂窝集群',
+    build(){
+      const cols = Math.floor(rand(4, 7)), rows = Math.floor(rand(3, 5));
+      const mx = world.w * 0.15, my = world.h * 0.16;
+      const dx = (world.w - mx * 2) / Math.max(1, cols - 1);
+      const dy = (world.h - my * 2) / Math.max(1, rows - 1);
+      const r = rand(17, 24);
+      for(let i = 0; i < cols; i++){
+        for(let j = 0; j < rows; j++){
+          const x = mx + i * dx + (j % 2 ? dx * 0.5 : 0);   // 奇行错半格 → 蜂窝排布
+          const y = my + j * dy + rand(-8, 8);
+          if(x < r + 90 || x > world.w - r - 90 || y < r + 90 || y > world.h - r - 90) continue;
+          if(!spotFree(x, y, r)) continue;
+          addPillar(x, y, r, 6);                              // 六边形柱
+        }
+      }
+      if(pillars.length < 6) scatterPillars(5, 20, 32);
+    }
+  },
+  {
+    id: 'crystal', name: '晶簇',
+    build(){
+      const clusters = Math.random() < 0.45 ? 2 : 1;
+      const sidesPool = [3, 5, 6];
+      for(let c = 0; c < clusters; c++){
+        let bx = 0, by = 0, okp = false;
+        for(let g = 0; g < 60 && !okp; g++){
+          bx = rand(world.w * 0.24, world.w * 0.76);
+          by = rand(world.h * 0.24, world.h * 0.76);
+          okp = Math.hypot(bx - world.w / 2, by - world.h / 2) > SPAWN_SAFE + 60;
+        }
+        if(!okp) continue;
+        const arms = Math.floor(rand(4, 7)), R = rand(90, 150), a0 = Math.random() * TAU;
+        for(let i = 0; i < arms; i++){
+          const a = a0 + i / arms * TAU + rand(-0.16, 0.16);
+          const rad = R * rand(0.5, 1);
+          const x = clamp(bx + Math.cos(a) * rad, 90, world.w - 90);
+          const y = clamp(by + Math.sin(a) * rad, 90, world.h - 90);
+          if(!spotFree(x, y, 26)) continue;
+          addPillar(x, y, rand(20, 34), sidesPool[Math.floor(rand(0, sidesPool.length))]);
+        }
+      }
+      scatterPillars(Math.floor(rand(1, 4)), 20, 30);
+    }
+  },
+  {
+    id: 'bullseye', name: '靶心环',
+    build(){
+      const cx = world.w / 2, cy = world.h / 2, a0 = Math.random() * TAU;
+      // 先来一两道短弧墙（分段矩形近似），柱子随后避开它们
+      const arcs = Math.floor(rand(1, 3));
+      for(let k = 0; k < arcs; k++){
+        const R = rand(160, 290), a = Math.random() * TAU;
+        const x = clamp(cx + Math.cos(a) * R, 120, world.w - 120);
+        const y = clamp(cy + Math.sin(a) * R, 120, world.h - 120);
+        if(spotFree(x, y, 48)) addWall(x, y, rand(60, 110), rand(15, 22), a + Math.PI / 2 + rand(-0.4, 0.4));
+      }
+      // 两圈环形柱阵
+      for(const R of [rand(220, 255), rand(285, 330)]){
+        const n = Math.max(7, Math.floor(R / rand(42, 56)));
+        for(let i = 0; i < n; i++){
+          const a = a0 + i / n * TAU + rand(-0.1, 0.1);
+          const x = clamp(cx + Math.cos(a) * R, 90, world.w - 90);
+          const y = clamp(cy + Math.sin(a) * R, 90, world.h - 90);
+          if(Math.hypot(x - cx, y - cy) < SPAWN_SAFE + 20) continue;
+          if(!spotFree(x, y, 22)) continue;
+          addPillar(x, y, rand(18, 28));
+        }
+      }
+    }
+  }
+];
+
+// 地形区：减速力场 / 充能泉
+function makeZones(){
+  const n = Math.floor(rand(1, 4));
+  for(let i = 0; i < n; i++){
+    const kind = Math.random() < 0.55 ? 'slow' : 'boost';
+    const r = rand(95, 155);
+    let ok = false, x = 0, y = 0;
+    for(let g = 0; g < 80 && !ok; g++){
+      x = rand(r + 110, world.w - r - 110);
+      y = rand(r + 110, world.h - r - 110);
+      ok = Math.hypot(x - world.w / 2, y - world.h / 2) > SPAWN_SAFE + 40;
+      if(ok) for(const z of zones) if(Math.hypot(z.x - x, z.y - y) < z.r + r + 60){ ok = false; break; }
+    }
+    if(ok) addZone(x, y, r, kind);
+  }
+}
+
+function generateMap(){
+  clearMap();
+  if(!MAP_RANDOM){
+    scatterPillars(7, 24, 40);
+    mapLabel = '标准场';
+    curTheme = DEFAULT_THEME;
+    buildMapStatic();
+    return null;
+  }
+  const t = MAP_TYPES[Math.floor(Math.random() * MAP_TYPES.length)];
+  t.build();
+  makeZones();
+  mapLabel = t.name;
+  curTheme = THEMES[t.id] || DEFAULT_THEME;
+  buildMapStatic();
+  return t;
+}
+
+// 该点是否嵌进任一障碍（柱/墙）
+function overlapsSolid(x, y, r){
+  for(const q of pillars){ if(Math.hypot(q.x - x, q.y - y) < q.cr + r) return true; }
+  for(const w of walls){ if(obbHit(w, x, y, r)) return true; }
+  return false;
+}
+
+// 进行中随机换图：在场地清空的波次切换点调用最安全。重随布局+主题，背景就地换色，玩家若被埋则拉回中心
+function reshuffleMap(){
+  generateMap();
+  if(curTheme.bg) for(let i = 0; i < nebulae.length; i++) nebulae[i].color = curTheme.bg[i % curTheme.bg.length];
+  if(overlapsSolid(player.x, player.y, player.r + 6)){ player.x = world.w / 2; player.y = world.h / 2; }
+  player.vx = 0; player.vy = 0;
+  player.invuln = Math.max(player.invuln, 1.2);
+  addFloat(player.x, player.y - 150, '地形变换 · ' + mapLabel, curTheme.label, 22);
+  spawnRing(player.x, player.y, curTheme.accent, Math.max(W, H) * 0.85, 0.9, 5);
+  SFX.wave();
+}
+
+// 窗口尺寸变化后把地形夹回场内
+function clampMap(){
+  for(const p of pillars){
+    p.x = clamp(p.x, p.r + 40, Math.max(p.r + 40, world.w - p.r - 40));
+    p.y = clamp(p.y, p.r + 40, Math.max(p.r + 40, world.h - p.r - 40));
+  }
+  for(const w of walls){
+    w.x = clamp(w.x, 80, Math.max(80, world.w - 80));
+    w.y = clamp(w.y, 80, Math.max(80, world.h - 80));
+  }
+  for(const z of zones){
+    z.x = clamp(z.x, z.r * 0.5, Math.max(z.r * 0.5, world.w - z.r * 0.5));
+    z.y = clamp(z.y, z.r * 0.5, Math.max(z.r * 0.5, world.h - z.r * 0.5));
+  }
+}
+
+// 圆 vs 旋转矩形（墙）：返回世界系法线与穿透深度
+function obbHit(w, x, y, r){
+  const cos = Math.cos(w.rot), sin = Math.sin(w.rot);
+  const dx = x - w.x, dy = y - w.y;
+  const lx = dx * cos + dy * sin;
+  const ly = -dx * sin + dy * cos;
+  const hw = w.w / 2, hh = w.h / 2;
+  const cx = clamp(lx, -hw, hw), cy = clamp(ly, -hh, hh);
+  const ox = lx - cx, oy = ly - cy;
+  const d = Math.hypot(ox, oy);
+  let nx, ny, pen;
+  if(d > 1e-6){
+    if(d >= r) return null;
+    nx = ox / d; ny = oy / d; pen = r - d;
+  } else {
+    const px = hw - Math.abs(lx), py = hh - Math.abs(ly);
+    if(px < py){ nx = lx >= 0 ? 1 : -1; ny = 0; pen = px + r; }
+    else { nx = 0; ny = ly >= 0 ? 1 : -1; pen = py + r; }
+  }
+  return { nx: nx * cos - ny * sin, ny: nx * sin + ny * cos, pen };
+}
+
+// 圆形单位与全部障碍求解：推出 + 速度反射。keep=反弹保留系数
+function reflectSolids(o, r, keep, onHard){
+  let hits = 0, bounced = false;
+  for(const q of pillars){
+    const dx = o.x - q.x, dy = o.y - q.y;
+    const d = Math.hypot(dx, dy), min = q.cr + r;
+    if(d < min && d > 0.0001){
+      const nx = dx / d, ny = dy / d;
+      o.x = q.x + nx * min; o.y = q.y + ny * min;
+      const dot = o.vx * nx + o.vy * ny;
+      if(dot < 0){
+        o.vx -= 2 * dot * nx; o.vy -= 2 * dot * ny;
+        o.vx *= keep; o.vy *= keep;
+        hits++; bounced = true;
+        o.hitNx = nx; o.hitNy = ny;
+        if(onHard && Math.abs(dot) > 90) onHard(o.x, o.y);
+      }
+    }
+  }
+  for(const w of walls){
+    const h = obbHit(w, o.x, o.y, r);
+    if(!h) continue;
+    o.x += h.nx * h.pen; o.y += h.ny * h.pen;
+    const dot = o.vx * h.nx + o.vy * h.ny;
+    if(dot < 0){
+      o.vx -= 2 * dot * h.nx; o.vy -= 2 * dot * h.ny;
+      o.vx *= keep; o.vy *= keep;
+      hits++; bounced = true;
+      o.hitNx = h.nx; o.hitNy = h.ny;
+      if(onHard && Math.abs(dot) > 90) onHard(o.x, o.y);
+    }
+  }
+  return hits;
+}
+
+// 敌人：只做推出，并给一点切向速度让它绕开墙而不是顶死
+function pushOutSolids(e, dt){
+  if(e.phaseT > 0) return false;   // 卡死自救期间穿墙，直接放行
+  let blocked = false;
+  for(const q of pillars){
+    const ddx = e.x - q.x, ddy = e.y - q.y;
+    const dd = Math.hypot(ddx, ddy), min = q.cr + e.r;
+    if(dd < min && dd > 0.0001){
+      e.x = q.x + ddx / dd * min;
+      e.y = q.y + ddy / dd * min;
+      blocked = true;
+    }
+  }
+  let slid = false;
+  for(const w of walls){
+    const h = obbHit(w, e.x, e.y, e.r);
+    if(!h) continue;
+    e.x += h.nx * h.pen; e.y += h.ny * h.pen;
+    blocked = true;
+    // 每帧只给一次切向助推，帮它绕开墙而不是顶死原地
+    if(!slid && dt){
+      slid = true;
+      const side = (e.id % 2) ? 1 : -1;
+      e.kx += -h.ny * 240 * side * dt; e.ky += h.nx * 240 * side * dt;
+    }
+  }
+  return blocked;
+}
+
+// ---------------- 地形区效果 ----------------
+function zoneAt(x, y){
+  for(const z of zones){
+    const dx = x - z.x, dy = y - z.y;
+    if(dx * dx + dy * dy < z.r * z.r) return z;
+  }
+  return null;
+}
+function zoneSpeedMul(x, y){
+  const z = zoneAt(x, y);
+  if(!z) return 1;
+  return z.kind === 'slow' ? 0.62 : 1.15;
 }
 
 // ---------------- 开始 ----------------
@@ -1572,11 +2082,12 @@ function startGame(){
   for(const r of rings) rel(r.s); rings = [];
   for(const s of storms) for(const x of s.sprites) rel(x); storms = [];
 
-  makePillars();
+  generateMap();
   makeNebulae();
   makeDust();
   cam.x = clamp(player.x - W / 2, 0, Math.max(0, world.w - W));
   cam.y = clamp(player.y - H / 2, 0, Math.max(0, world.h - H));
+  addFloat(player.x, player.y - 104, '地形 · ' + mapLabel, curTheme.label, 22);
 }
 
 // ---------------- 技能 ----------------
@@ -1969,6 +2480,8 @@ function spawnEnemy(type){
 
 function startWave(n){
   state.wave = n;
+  // 每隔几波随机换一张新地图（场地清空的瞬间最安全；BOSS 波不换）
+  if(MAP_SWITCH_WAVES > 0 && n > 1 && n % MAP_SWITCH_WAVES === 0 && n % 5 !== 0) reshuffleMap();
   const q = [];
   const bossWave = n % 5 === 0;
   let count = Math.min(15, Math.round((3 + n * 1.55) * Math.min(1.6, M.spawnMul || 1)));
@@ -2321,7 +2834,8 @@ function updatePlayer(dt){
   }
 
   const overMul = p.overload > 0 ? M.overRegen : 1;
-  p.energy = Math.min(p.maxEnergy, p.energy + 7 * M.enRegen * overMul * dt);
+  const pz = zoneAt(p.x, p.y);
+  p.energy = Math.min(p.maxEnergy, p.energy + 7 * M.enRegen * overMul * (pz && pz.kind === 'boost' ? 2.4 : 1) * dt);
 
   let ax = 0, ay = 0;
   if(keys['KeyW']) ay -= 1;
@@ -2341,7 +2855,7 @@ function updatePlayer(dt){
     const damp = Math.exp(-CFG.damp * dt);
     p.vx *= damp; p.vy *= damp;
     const sp = Math.hypot(p.vx, p.vy);
-    const maxSp = CFG.maxSpeed * M.spd * (p.overload > 0 ? 1.12 : 1) * boost * (p.webSlow > 0 ? 0.55 : 1);
+    const maxSp = CFG.maxSpeed * M.spd * (p.overload > 0 ? 1.12 : 1) * boost * (p.webSlow > 0 ? 0.55 : 1) * zoneSpeedMul(p.x, p.y);
     if(sp > maxSp){ p.vx = p.vx / sp * maxSp; p.vy = p.vy / sp * maxSp; }
   }
 
@@ -2354,25 +2868,18 @@ function updatePlayer(dt){
   if(p.y < r){ p.y = r; p.vy = Math.abs(p.vy) * M.wallKeep; wallFeedback('t'); }
   if(p.y > world.h - r){ p.y = world.h - r; p.vy = -Math.abs(p.vy) * M.wallKeep; wallFeedback('b'); }
 
-  for(const q of pillars){
-    const dx = p.x - q.x, dy = p.y - q.y;
-    const d = Math.hypot(dx, dy);
-    const min = q.r + p.r;
-    if(d < min && d > 0.0001){
-      const nx = dx / d, ny = dy / d;
-      p.x = q.x + nx * min; p.y = q.y + ny * min;
-      const dot = p.vx * nx + p.vy * ny;
-      if(dot < 0){
-        p.vx -= 2 * dot * nx; p.vy -= 2 * dot * ny;
-        p.vx *= M.wallKeep; p.vy *= M.wallKeep;
-        if(Math.abs(dot) > 90){
-          SFX.pillar();
-          spawnParticles(p.x, p.y, 5, 0x5ffbf1, 140, 0.3, 2);
-          spawnRing(p.x, p.y, 0x5ffbf1, 44, 0.28, 2);
-          addReboundStack(p.x, p.y);
-        }
-      }
-    }
+  const hits = reflectSolids(p, p.r, M.wallKeep, (x, y) => {
+    SFX.pillar();
+    spawnParticles(x, y, 5, 0x5ffbf1, 140, 0.3, 2);
+    spawnRing(x, y, 0x5ffbf1, 44, 0.28, 2);
+    addReboundStack(x, y);
+  });
+  // 墙角脱困：明明在推方向却被夹住不动，沿障碍切向推一把
+  if(hits && (p.moveDir.x || p.moveDir.y) && Math.hypot(p.vx, p.vy) < 70){
+    const nx = p.hitNx || 0, ny = p.hitNy || 0;
+    let tx = -ny, ty = nx;
+    if(tx * p.moveDir.x + ty * p.moveDir.y < 0){ tx = -tx; ty = -ty; }
+    p.vx += tx * 150; p.vy += ty * 150;
   }
 
   p.trail.push({ x: p.x, y: p.y, a: 1 });
@@ -2444,20 +2951,10 @@ function updateBullets(dt){
     if(b.y < b.r){ b.y = b.r; b.vy = Math.abs(b.vy); bounced = true; }
     if(b.y > world.h - b.r){ b.y = world.h - b.r; b.vy = -Math.abs(b.vy); bounced = true; }
 
-    for(const q of pillars){
-      const dx = b.x - q.x, dy = b.y - q.y;
-      const d = Math.hypot(dx, dy);
-      if(d < q.r + b.r && d > 0.0001){
-        const nx = dx / d, ny = dy / d;
-        b.x = q.x + nx * (q.r + b.r);
-        b.y = q.y + ny * (q.r + b.r);
-        const dot = b.vx * nx + b.vy * ny;
-        b.vx -= 2 * dot * nx; b.vy -= 2 * dot * ny;
-        bounced = true;
-        SFX.pillar();
-        spawnRing(b.x, b.y, 0x7fe9ff, 34, 0.25, 2);
-      }
-    }
+    if(reflectSolids(b, b.r, 1, (x, y) => {
+      SFX.pillar();
+      spawnRing(x, y, 0x7fe9ff, 34, 0.25, 2);
+    })) bounced = true;
 
     if(bounced){
       b.bounces--;
@@ -2561,7 +3058,7 @@ function updateEnemies(dt){
     const nx = dx / d, ny = dy / d;
     // 攻击性随玩家等级百分比提升；全图索敌，距离越远移速加成越高（基于基础速度）
     const aggro = 1 + (state.level - 1) * 0.05;
-    const spd = e.speed * slow * aggro * (1 + clamp((d - 280) / 900, 0, 0.9));
+    const spd = e.speed * slow * aggro * zoneSpeedMul(e.x, e.y) * (1 + clamp((d - 280) / 900, 0, 0.9));
 
     if(e.type === 'chaser' || e.type === 'mini'){
       e.x += nx * spd * dt;
@@ -2655,15 +3152,16 @@ function updateEnemies(dt){
     e.x += e.kx * dt; e.y += e.ky * dt;
     e.kx *= Math.exp(-7 * dt); e.ky *= Math.exp(-7 * dt);
 
-    for(const q of pillars){
-      const ddx = e.x - q.x, ddy = e.y - q.y;
-      const dd = Math.hypot(ddx, ddy);
-      const min = q.r + e.r;
-      if(dd < min && dd > 0.0001){
-        e.x = q.x + ddx / dd * min;
-        e.y = q.y + ddy / dd * min;
-      }
+    // 卡死自救：连续 3.5 秒被障碍挡住过不去，就给 1.6 秒穿墙，避免敌人卡墙外、波次清不掉
+    const blocked = pushOutSolids(e, dt);
+    if(blocked && e.spawnT <= 0){
+      e.stuckT = (e.stuckT || 0) + dt;
+      if(e.stuckT > 3.5){ e.phaseT = 1.6; e.stuckT = 0; }
+    } else {
+      e.stuckT = 0;
     }
+    if(e.phaseT > 0) e.phaseT -= dt;
+
 
     e.x = clamp(e.x, e.r, world.w - e.r);
     e.y = clamp(e.y, e.r, world.h - e.r);
@@ -3008,6 +3506,87 @@ function syncWalls(){
   }
 }
 
+function wallPoly(g, w, inset){
+  const hw = w.w / 2 - (inset || 0), hh = w.h / 2 - (inset || 0);
+  const cos = Math.cos(w.rot), sin = Math.sin(w.rot);
+  const pt = (px, py) => [w.x + px * cos - py * sin, w.y + px * sin + py * cos];
+  const a = pt(-hw, -hh), b = pt(hw, -hh), c = pt(hw, hh), d = pt(-hw, hh);
+  g.moveTo(a[0], a[1]).lineTo(b[0], b[1]).lineTo(c[0], c[1]).lineTo(d[0], d[1]).closePath();
+}
+
+// 正多边形柱体路径（蜂窝/晶簇），phase 决定朝向
+function pillarPoly(g, q, inset){
+  const n = q.sides, R = q.r - (inset || 0), a0 = q.phase;
+  for(let i = 0; i < n; i++){
+    const a = a0 + i / n * TAU;
+    const px = q.x + Math.cos(a) * R, py = q.y + Math.sin(a) * R;
+    if(i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+  }
+  g.closePath();
+}
+
+// 静态地形：只在生成地图 / 尺寸变化时画一次，绝不每帧重绘
+function buildMapStatic(){
+  if(!gmap) return;
+  const g = gmap, th = curTheme;
+  g.clear();
+  // 多边形柱体：静态实体 + 主题描边
+  for(const q of pillars){
+    if(q.sides < 3) continue;
+    pillarPoly(g, q, 0);   g.fill({ color: th.fill, alpha: 0.9 });
+    pillarPoly(g, q, 0);   g.stroke({ width: 2.6, color: th.accent, alpha: 0.55 });
+    pillarPoly(g, q, 4.5); g.stroke({ width: 1, color: th.glow, alpha: 0.5 });
+  }
+  for(const z of zones){
+    const c = z.kind === 'slow' ? 0x9b6bff : 0x5affc8;
+    g.circle(z.x, z.y, z.r).fill({ color: c, alpha: 0.055 });
+    g.circle(z.x, z.y, z.r).stroke({ width: 1.6, color: c, alpha: 0.26 });
+  }
+  for(const w of walls){
+    wallPoly(g, w, 0); g.fill({ color: th.fill, alpha: 0.94 });
+    wallPoly(g, w, 0); g.stroke({ width: 10, color: th.accent, alpha: 0.09 });
+    wallPoly(g, w, 0); g.stroke({ width: 3.5, color: th.accent2, alpha: 0.26 });
+    wallPoly(g, w, 0); g.stroke({ width: 1.3, color: th.glow, alpha: 0.66 });
+    wallPoly(g, w, 5.5); g.stroke({ width: 1, color: th.accent, alpha: 0.16 });
+  }
+}
+
+// 动态部分：每帧只画很少量的圆点与扩散环
+function drawMapFx(){
+  if(!gmapFx) return;
+  const g = gmapFx, t = state.time;
+  g.clear();
+  if(!zones.length && !walls.length) return;
+
+  for(const z of zones){
+    const pulse = 0.5 + 0.5 * Math.sin(t * 1.3 + z.phase);
+    const c = z.kind === 'slow' ? 0x9b6bff : 0x5affc8;
+    const k = (t * 0.38 + z.phase / TAU) % 1;
+    g.circle(z.x, z.y, z.r * k).stroke({ width: 1.2, color: c, alpha: 0.22 * (1 - k) });
+    if(z.kind === 'boost'){
+      const s = 9 + pulse * 4;
+      g.moveTo(z.x, z.y - s).lineTo(z.x + s, z.y).lineTo(z.x, z.y + s).lineTo(z.x - s, z.y).closePath()
+        .fill({ color: c, alpha: 0.16 }).stroke({ width: 1.2, color: c, alpha: 0.5 });
+    } else {
+      for(let i = 0; i < 3; i++){
+        const a = t * 0.85 + z.phase + i / 3 * TAU;
+        g.circle(z.x + Math.cos(a) * z.r * 0.52, z.y + Math.sin(a) * z.r * 0.52, 3.6)
+          .fill({ color: c, alpha: 0.28 + pulse * 0.18 });
+      }
+    }
+  }
+
+  for(const w of walls){
+    const flick = 0.5 + 0.5 * Math.sin(t * 1.7 + w.phase);
+    const cos = Math.cos(w.rot), sin = Math.sin(w.rot), ex = w.w / 2 - 3;
+    for(const s of [-1, 1]){
+      const px = ex * s;
+      g.circle(w.x + px * cos, w.y + px * sin, 3.2 + flick * 1.4)
+        .fill({ color: curTheme.glow, alpha: 0.30 + flick * 0.25 });
+    }
+  }
+}
+
 function syncPillars(){
   for(const q of pillars){
     const pulse = 0.5 + 0.5 * Math.sin(state.time * 2 + q.phase);
@@ -3017,19 +3596,20 @@ function syncPillars(){
     ring2.texture = TEX.ring;
     d1.texture = TEX.dot;
     d2.texture = TEX.dot;
-    halo.position.set(q.x, q.y); halo.scale.set(q.r * 5.6 / 128); halo.tint = 0x5ac8ff; halo.alpha = 0.24 + pulse * 0.14;
-    ring.position.set(q.x, q.y); ring.scale.set(q.r * 2.3 / 128); ring.tint = 0x78e6ff; ring.alpha = 0.6 + pulse * 0.3;
-    ring2.position.set(q.x, q.y); ring2.scale.set(q.r * 1.25 / 128); ring2.tint = 0x78e6ff; ring2.alpha = 0.28;
+    const th = curTheme;
+    halo.position.set(q.x, q.y); halo.scale.set(q.r * 5.6 / 128); halo.tint = th.accent; halo.alpha = 0.24 + pulse * 0.14;
+    ring.position.set(q.x, q.y); ring.scale.set(q.r * 2.3 / 128); ring.tint = th.accent2; ring.alpha = 0.6 + pulse * 0.3;
+    ring2.position.set(q.x, q.y); ring2.scale.set(q.r * 1.25 / 128); ring2.tint = th.accent2; ring2.alpha = 0.28;
     const ra = q.ringA + state.time * q.spin;
     d1.position.set(q.x + Math.cos(ra) * (q.r + 9), q.y + Math.sin(ra) * (q.r + 9));
-    d1.scale.set(5.2 / 64); d1.tint = 0x8ff6ff; d1.alpha = 0.5 + pulse * 0.35;
+    d1.scale.set(5.2 / 64); d1.tint = th.glow; d1.alpha = 0.5 + pulse * 0.35;
     const rb = ra + Math.PI;
     d2.position.set(q.x + Math.cos(rb) * (q.r + 9), q.y + Math.sin(rb) * (q.r + 9));
-    d2.scale.set(4 / 64); d2.tint = 0x8ff6ff; d2.alpha = 0.4;
+    d2.scale.set(4 / 64); d2.tint = th.glow; d2.alpha = 0.4;
     inner.position.set(q.x, q.y);
     inner.rotation = state.time * 0.35 + q.phase;
     inner.scale.set(q.r * 0.9 / 96);
-    inner.tint = 0xa8f0ff;
+    inner.tint = th.accent2;
     inner.alpha = 0.18 + pulse * 0.16;
     inner.texture = TEX['p' + ['Mini','Tank','Turret'][q.shape % 3]];
   }
@@ -4052,6 +4632,23 @@ function drawMinimap(){
   const sx = mw / world.w, sy = mh / world.h;
   hudG.rect(mx + cam.x * sx, my + cam.y * sy, (W / cam.zoom) * sx, (H / cam.zoom) * sy)
        .stroke({ width: 1, color: 0xffffff, alpha: 0.22 });
+  for(const z of zones){
+    const zc = z.kind === 'slow' ? 0x9b6bff : 0x5affc8;
+    hudG.circle(mx + z.x * sx, my + z.y * sy, Math.max(3, z.r * sx)).fill({ color: zc, alpha: 0.13 });
+    hudG.circle(mx + z.x * sx, my + z.y * sy, Math.max(3, z.r * sx)).stroke({ width: 1, color: zc, alpha: 0.5 });
+  }
+  for(const q of pillars){
+    hudG.circle(mx + q.x * sx, my + q.y * sy, Math.max(2, q.r * sx)).stroke({ width: 1, color: curTheme.accent2, alpha: 0.75 });
+  }
+  for(const w of walls){
+    const hw = w.w / 2 * sx, hh = w.h / 2 * sy;
+    const cos = Math.cos(w.rot), sin = Math.sin(w.rot);
+    const cx = mx + w.x * sx, cy = my + w.y * sy;
+    const pt = (px, py) => [cx + px * cos - py * sin, cy + px * sin + py * cos];
+    const a = pt(-hw, -hh), b = pt(hw, -hh), c = pt(hw, hh), d = pt(-hw, hh);
+    hudG.moveTo(a[0], a[1]).lineTo(b[0], b[1]).lineTo(c[0], c[1]).lineTo(d[0], d[1]).closePath()
+      .fill({ color: curTheme.accent, alpha: 0.55 });
+  }
   for(const u of pickups){
     const cc = u.kind === 'heal' ? 0x5affc8 : u.kind === 'shield' ? 0x7fb8ff : u.kind === 'power' ? 0xffe45c : 0x5ffbf1;
     hudG.rect(mx + u.x * sx - 1.5, my + u.y * sy - 1.5, 3, 3).fill({ color: cc, alpha: 0.8 });
@@ -4547,6 +5144,7 @@ function frame(ticker){
   syncStars();
   syncWallPulses();
   syncWalls();
+  drawMapFx();
   syncPillars();
   syncStorms();
   syncPickups();
@@ -4696,7 +5294,7 @@ async function main(){
     enemyBloom: mkPool(TEX.dot, 44, worldLayer, true),
     enemy: mkPool(TEX.dot, 44 * 11, worldLayer, true),
     plus: mkPool(TEX.plus, 16, worldLayer, true),
-    pillar: mkPool(TEX.dot, 8 * 6, worldLayer, true),
+    pillar: mkPool(TEX.dot, 20 * 6, worldLayer, true),
     storm: mkPool(TEX.dashRing, 6, worldLayer, true),
     pkGlow: mkPool(TEX.glow, 40, worldLayer, true),
     pkCore: mkPool(TEX.kEnergy, 40, worldLayer, true),
@@ -4725,6 +5323,10 @@ async function main(){
   worldLayer.addChildAt(grow, 0);
   ggrid = new Pixi.Graphics();
   worldLayer.addChildAt(ggrid, 1);
+  gmap = new Pixi.Graphics();
+  worldLayer.addChildAt(gmap, 2);   // 墙体与地形区静态层
+  gmapFx = new Pixi.Graphics();
+  worldLayer.addChildAt(gmapFx, 3); // 地形动态光效层
   makeStars();
   makeWallPulses();
 
@@ -4886,6 +5488,7 @@ async function main(){
     document.documentElement.style.height = window.innerHeight + 'px';
     W = window.innerWidth; H = window.innerHeight;
     computeWorld();
+    if(state.mode === 'title') generateMap(); else { clampMap(); buildMapStatic(); }
     makeNebulae();
     makeDust();
     layoutScreens();
