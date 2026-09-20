@@ -250,10 +250,11 @@ function wrapCJK(s, per){
 // ---------------- 贴图烘焙 ----------------
 
 
-function bake(size, draw){
+function bake(size, draw, k = 1){
   const c = document.createElement('canvas');
-  c.width = size; c.height = size;
+  c.width = size * k; c.height = size * k;
   const g = c.getContext('2d');
+  if(k !== 1) g.scale(k, k);
   draw(g, size);
   return Pixi.Texture.from(c);
 }
@@ -325,7 +326,7 @@ function buildTextures(){
     g.beginPath(); g.arc(r, r, 5, 0, TAU); g.fill();
   });
   // 冲击环（极细发丝环：1px 亮线 + 窄柔光带）
-  TEX.ring = bake(128, (g, s) => {
+  const ringDraw = (g, s) => {
     const c = s / 2;
     const gr = g.createRadialGradient(c, c, 0, c, c, c);
     gr.addColorStop(0, 'rgba(255,255,255,0)');
@@ -338,9 +339,11 @@ function buildTextures(){
     g.strokeStyle = 'rgba(255,255,255,0.95)';
     g.lineWidth = 1;
     g.beginPath(); g.arc(c, c, c * 0.9, 0, TAU); g.stroke();
-  });
+  };
+  TEX.ring = bake(128, ringDraw);
+  TEX.ringBig = bake(128, ringDraw, 2);   // BOSS 光环/轨道环 2×：放大不糊
   // 虚线环（极细）
-  TEX.dashRing = bake(128, (g, s) => {
+  const dashRingDraw = (g, s) => {
     const r = s / 2 - 8;
     g.strokeStyle = 'rgba(255,255,255,0.95)';
     g.lineWidth = 1.2;
@@ -350,7 +353,9 @@ function buildTextures(){
       g.arc(s / 2, s / 2, r, a, a + TAU / 48);
       g.stroke();
     }
-  });
+  };
+  TEX.dashRing = bake(128, dashRingDraw);
+  TEX.dashRingBig = bake(128, dashRingDraw, 2);   // BOSS 外光环 2×
   // 球体（灰阶，运行时 tint；高光偏移 -3,-4 与参考版一致）
   TEX.ball = bake(64, (g, s) => {
     const r = s / 2;
@@ -381,11 +386,11 @@ function buildTextures(){
     g.fillStyle = gr;
     g.fillRect(0, s / 2 - 1, s, 2);
   });
-  // 血条底/填充
+  // 血条底/填充（8× 分辨率：BOSS 血条可拉到 300+ px，放大不虚边）
   TEX.bar = bake(32, (g, s) => {
     g.fillStyle = '#fff';
     g.fillRect(0, 2, s, s - 4);
-  });
+  }, 8);
   // 边墙渐变（左亮右透）
   TEX.edge = bake(64, (g, s) => {
     const gr = g.createLinearGradient(0, 0, s * 0.5, 0);
@@ -396,7 +401,7 @@ function buildTextures(){
     g.fillRect(0, 0, s * 0.5, s);
   });
   // 多边形敌人本体
-  const poly = (n, inset) => bake(96, (g, s) => {
+  const poly = (n, inset, k = 1) => bake(96, (g, s) => {
     const r = s / 2 - 6, cx = s / 2, cy = s / 2;
     g.fillStyle = 'rgba(255,255,255,0.92)';
     g.beginPath();
@@ -408,11 +413,13 @@ function buildTextures(){
     g.closePath(); g.fill();
     g.globalCompositeOperation = 'destination-out';
     g.beginPath(); g.arc(cx, cy, r * inset, 0, TAU); g.fill();
-  });
+  }, k);
   TEX.pChaser = bake(96, (g, s) => { g.fillStyle = '#fff'; g.beginPath(); g.arc(s / 2, s / 2, s / 2 - 6, 0, TAU); g.fill(); });
   TEX.pTurret = poly(6, 0.45);
   TEX.pTank = poly(4, 0.35);
   TEX.pBoss = poly(8, 0.35);
+  // BOSS 本体 4× 高清：阶职越高体积越大（半径 ×1.64/阶），高分辨率贴图保证放大后边缘依旧锐利
+  TEX.pBossBig = poly(8, 0.35, 4);
   TEX.pMini = poly(3, 0.25);
   TEX.pSplitter = poly(5, 0.35);
   // 蜂刺：细长飞镖（朝 -Y 绘制，同步时旋转指向目标）
@@ -448,12 +455,12 @@ function buildTextures(){
     g.globalCompositeOperation = 'destination-out';
     g.beginPath(); g.arc(cx, cy, r * 0.52, 0, TAU); g.fill();
   });
-  // 细弧（敌人内构 / 玩家陀螺仪，半径 27px）
+  // 细弧（敌人内构 / 玩家陀螺仪，半径 27px；2× 供 BOSS 放大）
   TEX.arc = bake(64, (g, s) => {
     g.strokeStyle = 'rgba(255,255,255,0.95)';
     g.lineWidth = 1.4;
     g.beginPath(); g.arc(s / 2, s / 2, s / 2 - 5, 0, Math.PI * 0.6); g.stroke();
-  });
+  }, 2);
   // 拾取物核心（对齐参考版：半透明填充 0.22 + 2px 描边 + 白色中心点）
   TEX.kEnergy = bake(48, (g, s) => {
     const c = s / 2;
@@ -529,11 +536,11 @@ function buildTextures(){
     g.fillStyle = gr;
     g.fillRect(0, s * 0.28, s, s * 0.44);
   });
-  // 敌人暗核（实心圆，运行时染近黑）
+  // 敌人暗核（实心圆，运行时染近黑；2× 供 BOSS 放大）
   TEX.darkCore = bake(64, (g, s) => {
     g.fillStyle = 'rgba(255,255,255,1)';
     g.beginPath(); g.arc(s / 2, s / 2, s / 2 - 2, 0, TAU); g.fill();
-  });
+  }, 2);
   // 命中火花（四芒星闪光）
   TEX.spark = bake(64, (g, s) => {
     const c = s / 2;
@@ -3697,6 +3704,9 @@ function syncEnemies(){
     const [halo, rim, body, darkCore, core, hpBg, hpFill] = e.sprites;
     const spawnK = clamp(1 - e.spawnT / (e.type === 'boss' ? 1.25 : 0.45), 0, 1);
     const flash = e.hitFlash > 0;
+    // BOSS 本体/描边/泛光用 4× 高清贴图（单位 168），其他敌人沿用原贴图（单位 42）
+    const bodyTex = e.type === 'boss' ? TEX.pBossBig : TEX[TEX_OF[e.type]];
+    const bodyU = e.type === 'boss' ? 168 : 42;
     // 呼吸：本体半径 3% 脉动，增加活物感
     const sr = e.r * (0.55 + spawnK * 0.45) * (1 + 0.03 * Math.sin(state.time * 4 + e.wob));
     const rot = e.type === 'turret' ? state.time * 0.8
@@ -3732,10 +3742,10 @@ function syncEnemies(){
     // 本体贴合泛光（等价于参考版多边形的 shadowBlur 20：沿轮廓外扩的同色光）
     const bloom = e.sprites[9];
     if(bloom){
-      bloom.texture = TEX[TEX_OF[e.type]];
+      bloom.texture = bodyTex;
       bloom.rotation = rot;
       bloom.position.set(e.x, e.y);
-      bloom.scale.set(sr * 1.34 / 42);
+      bloom.scale.set(sr * 1.34 / bodyU);
       bloom.tint = flash ? 0xffffff : (slowed ? 0x9fd8ff : e.color);
       bloom.alpha = 0.34;
       bloom.blendMode = 'add';
@@ -3743,24 +3753,24 @@ function syncEnemies(){
 
     // 白色描边：比本体大 9%，垫在下面即为参考版那圈 2px 白边
     rim.position.set(e.x, e.y);
-    rim.texture = TEX[TEX_OF[e.type]];
+    rim.texture = bodyTex;
     rim.rotation = rot;
-    rim.scale.set(sr * 1.09 / 42);
+    rim.scale.set(sr * 1.09 / bodyU);
     rim.tint = 0xffffff;
     rim.alpha = bodyA * 0.85;
 
     // 本体：实色多边形（填充 0.85，顶点半径 = scaledR）
     body.position.set(e.x, e.y);
-    body.texture = TEX[TEX_OF[e.type]];
+    body.texture = bodyTex;
     body.rotation = rot;
-    body.scale.set(sr / 42);
+    body.scale.set(sr / bodyU);
     body.tint = mainTint;
     body.alpha = bodyA * 0.85;
 
     // 暗核：#0a0c14 实心圆，半径 0.42R（参考版为不透明）
     darkCore.texture = TEX.darkCore;
     darkCore.position.set(e.x, e.y);
-    darkCore.scale.set(sr * 0.84 / 64);
+    darkCore.scale.set(sr * 0.84 / 128);
     darkCore.tint = 0x0a0c14;
     darkCore.alpha = 1;
 
@@ -3792,19 +3802,19 @@ function syncEnemies(){
     const aura = e.sprites[8];
     if(aura){
       const auraCol = e.enraged ? 0xff5e3d : e.color;
-      aura.texture = TEX.dashRing;
+      aura.texture = TEX.dashRingBig;
       aura.position.set(e.x, e.y);
       aura.rotation = state.time * 1.5;
-      aura.scale.set(e.r * 4.6 / 128);
+      aura.scale.set(e.r * 4.6 / 256);
       aura.tint = auraCol;
       aura.alpha = 0.32 + 0.24 * Math.sin(state.time * 4);
       const aura2 = e.sprites[14];
       if(aura2){
-        aura2.texture = TEX.ring;
+        aura2.texture = TEX.ringBig;
         aura2.blendMode = 'add';
         aura2.position.set(e.x, e.y);
         aura2.rotation = -state.time * 0.9;
-        aura2.scale.set(e.r * 2.6 / 57.6);
+        aura2.scale.set(e.r * 2.6 / 115.2);
         aura2.tint = auraCol;
         aura2.alpha = 0.16 + 0.1 * Math.sin(state.time * 3 + 1);
       }
@@ -3814,12 +3824,12 @@ function syncEnemies(){
     const orbit = e.sprites[10];
     if(orbit){
       const oR = e.type === 'boss' ? sr * 1.7 : sr * 1.45;
-      orbit.texture = TEX.ring;
+      orbit.texture = TEX.ringBig;
       orbit.blendMode = 'add';
       orbit.visible = e.spawnT <= 0.2;
       orbit.position.set(e.x, e.y);
       orbit.rotation = state.time * 0.7 + e.wob;
-      orbit.scale.set(oR / 57.6);
+      orbit.scale.set(oR / 115.2);
       orbit.tint = flash ? 0xffffff : e.color;
       orbit.alpha = (e.type === 'boss' ? 0.4 : e.elite ? 0.34 : 0.22) * bodyA;
     }
@@ -3845,7 +3855,7 @@ function syncEnemies(){
       arc.visible = e.type !== 'mini' && spawnK >= 1;
       arc.position.set(e.x, e.y);
       arc.rotation = -rot * 1.6 + e.wob;
-      arc.scale.set(sr * 0.62 / 27);
+      arc.scale.set(sr * 0.62 / 54);
       arc.tint = flash ? 0xffffff : e.color;
       arc.alpha = 0.45 * bodyA;
     }
@@ -3869,14 +3879,14 @@ function syncEnemies(){
         hpBg.visible = true;
         hpBg.anchor.set(0, 0.5);
         hpBg.position.set(e.x - w / 2, e.y - e.r - 12);
-        hpBg.scale.set(w / 32, h / 32);
+        hpBg.scale.set(w / 256, h / 256);
         hpBg.tint = 0x000000;
         hpBg.alpha = 0.55;
         hpFill.texture = TEX.bar;
         hpFill.visible = true;
         hpFill.anchor.set(0, 0.5);
         hpFill.position.set(e.x - w / 2, e.y - e.r - 12);
-        hpFill.scale.set(w / 32 * clamp(e.hp / e.maxHp, 0, 1), h / 32);
+        hpFill.scale.set(w / 256 * clamp(e.hp / e.maxHp, 0, 1), h / 256);
         hpFill.tint = e.elite ? 0xffc83d : e.color;
         hpFill.alpha = 1;
       } else {
@@ -4217,7 +4227,7 @@ function updatePlayerVisual(){
     s.visible = alive;
     s.position.set(p.x, p.y);
     s.rotation = dir * state.time * 2.4 + (dir < 0 ? Math.PI : 0);
-    s.scale.set((p.r + 4) / 27);
+    s.scale.set((p.r + 4) / 54);
     s.tint = mainCol;
     s.alpha = 0.5 * blinkA;
   }
