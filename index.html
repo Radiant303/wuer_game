@@ -891,7 +891,7 @@ const state = {
   stormCd: 10, meteorCd: 3, particleCap: 900,
   level: 1, xp: 0, xpNeed: 40, pending: 0, cards: [], offer: [], sel: 0, novaFlash: 0,
   wuerDone: false, miaoBless: false, stasis: 0, magnetize: 0, pendingSkill: null,
-  bossBarId: 0, bossBarK: 1, bossChunks: [], bossCutT: 0   // BOSS 血条：当前 BOSS / 上次血量比例 / 坠落碎块 / 断口灼热（死亡细胞式）
+  bossBars: {}   // BOSS 血条：每只 BOSS 独立的 { k, chunks, cutT }（死亡细胞式分段坠落）
 };
 
 const player = {
@@ -4864,13 +4864,14 @@ function buildHUD(){
   HT.hp = mk(12); HT.en = mk(10); HT.lv = mk(12); HT.cards = mk(10);
   HT.coucou = mk(11);
   HT.score = mk(28, 'right'); HT.wave = mk(13, 'right'); HT.foe = mk(11, 'right');
-  HT.combo = mk(30, 'center'); HT.power = mk(12); HT.boss = mk(11, 'center');
+  HT.combo = mk(30, 'center'); HT.power = mk(12); HT.boss = mk(11, 'center'); HT.boss2 = mk(11, 'center');
   HT.shield = mk(11); HT.rebound = mk(11); HT.boost = mk(11);
   for(const k in HT) HT[k].resolution = 2;
   // 少量阴影：真实 dropShadow（参考版靠 shadowBlur 做霓虹），只给需要发光的几处
   neon(HT.score, 0x5ffbf1, 18);
   neon(HT.combo, 0xffe45c, 22);
   neon(HT.boss, 0xff2fd0, 12);
+  neon(HT.boss2, 0xff2fd0, 12);
 }
 
 // 少量阴影：Pixi Text 自带 dropShadow（distance 0 = 对称辉光），替代参考版的 shadowBlur
@@ -5246,80 +5247,104 @@ function drawMinimap(){
 }
 
 function drawBossBar(dt){
-  const bs = enemies.filter(e => e.type === 'boss');
-  if(!bs.length){ HT.boss.text = ''; state.bossBarId = 0; state.bossChunks.length = 0; return; }
-  const b = bs[0];
-  const enraged = bs.some(x => x.enraged);
+  const bs = enemies.filter(e => e.type === 'boss').slice(0, 2);
+  if(!bs.length){
+    HT.boss.text = ''; if(HT.boss2) HT.boss2.text = '';
+    state.bossBars = {};
+    return;
+  }
   dt = dt || 0.016;
-  // 桌面端压底、触屏端置顶压扁，避免遮挡战斗视野
+  const dual = bs.length > 1;
+  // 清理已死亡 BOSS 的血条状态
+  const ids = new Set(bs.map(x => x.id));
+  for(const key in state.bossBars) if(!ids.has(+key)) delete state.bossBars[key];
+
   const bw = uiTouch ? Math.min(300, W * 0.5) : Math.min(470, W * 0.56);
-  const bx = W / 2 - bw / 2, by = uiTouch ? 6 : H - 106, bh = uiTouch ? 10 : 22;
-  const nameY = uiTouch ? by + bh + 2 : by - 18;
-  // 双子 BOSS（喵雅喵的祝福）：按总血池合并显示
-  const k = clamp(bs.reduce((s, x) => s + x.hp, 0) / bs.reduce((s, x) => s + x.maxHp, 1), 0, 1);
-  const barCol = enraged ? 0xff5e3d : b.color;
-  // 死亡细胞式分段坠落：掉血部分碎成硬边方块，阶梯延迟剥落、受重力坠落消散；换 BOSS 清空
-  const barId = bs.length > 1 ? bs[0].id * 100000 + bs[1].id : b.id;
-  if(state.bossBarId !== barId){ state.bossBarId = barId; state.bossChunks.length = 0; state.bossCutT = 0; }
-  if(k < state.bossBarK - 1e-4){
-    const lost = state.bossBarK - k;
-    const n = clamp(Math.round(lost * bw / bh), 1, 6);              // 块数随损失量，单块接近正方形
-    for(let i = 0; i < n; i++){
-      state.bossChunks.push({
-        x0: k + lost * i / n, x1: k + lost * (i + 1) / n,
-        y: 0, v: 0, t: -(n - 1 - i) * 0.05,                          // 越靠断口的块越晚剥落，形成下行阶梯
-      });
+  const bx = W / 2 - bw / 2;
+  // 双子 BOSS（喵雅喵的祝福）：上下两条独立血条，各自颜色、名字与坠落碎块
+  const bh = dual ? (uiTouch ? 8 : 15) : (uiTouch ? 10 : 22);
+  const gap = dual ? (uiTouch ? 5 : 12) : 0;
+  const byTop = uiTouch ? 6 : (dual ? H - 122 : H - 106);
+
+  bs.forEach((b, bi) => {
+    const by = byTop + bi * (bh + gap);
+    const S = state.bossBars[b.id] || (state.bossBars[b.id] = { k: 1, chunks: [], cutT: 0 });
+    const k = clamp(b.hp / b.maxHp, 0, 1);
+    const barCol = b.enraged ? 0xff5e3d : b.color;
+    // 死亡细胞式分段坠落：掉血部分碎成硬边方块，阶梯延迟剥落、受重力坠落消散（每条独立）
+    if(k < S.k - 1e-4){
+      const lost = S.k - k;
+      const n = clamp(Math.round(lost * bw / bh), 1, 6);            // 块数随损失量，单块接近正方形
+      for(let i = 0; i < n; i++){
+        S.chunks.push({ x0: k + lost * i / n, x1: k + lost * (i + 1) / n, y: 0, v: 0, t: -(n - 1 - i) * 0.05 });
+      }
+      if(S.chunks.length > 18) S.chunks.splice(0, S.chunks.length - 18);
+      S.cutT = 0.3;                                                  // 断口灼热计时
     }
-    if(state.bossChunks.length > 18) state.bossChunks.splice(0, state.bossChunks.length - 18);
-    state.bossCutT = 0.3;                                            // 断口灼热计时
+    S.k = k;
+    // 外框双线 + 底座（整条直角硬边，对标 demo 的像素断切感）
+    hudG.rect(bx - 4, by - 4, bw + 8, bh + 8).stroke({ width: 1, color: barCol, alpha: 0.3 });
+    hudG.rect(bx, by, bw, bh).fill({ color: 0x0a0614, alpha: 0.82 });
+    hudG.rect(bx, by, bw * k, bh).fill({ color: barCol, alpha: 0.95 });
+    // 坠落碎块（画在主条之后、凹槽之前，剥落瞬间与血条严丝合缝）
+    for(let i = S.chunks.length - 1; i >= 0; i--){
+      const c = S.chunks[i];
+      c.t += dt;
+      if(c.t > 0){ c.v += 520 * dt; c.y += c.v * dt; }
+      const p = clamp(c.t / 0.7, 0, 1);
+      if(p >= 1){ S.chunks.splice(i, 1); continue; }
+      hudG.rect(bx + bw * c.x0, by + c.y, bw * (c.x1 - c.x0) + 0.5, bh)
+        .fill({ color: 0xffffff, alpha: 0.95 * (1 - p) });
+    }
+    // 十格凹槽（分段读数）
+    for(let i = 1; i < 10; i++){
+      hudG.rect(bx + bw * i / 10 - 1, by + 2, 2, bh - 4).fill({ color: 0x0a0614, alpha: 0.85 });
+    }
+    hudG.rect(bx, by, bw, bh).stroke({ width: 1.5, color: barCol, alpha: 0.85 });
+    // 断口灼热（画最上层，掉血瞬间断口一道亮白 + 同色光晕）
+    if(S.cutT > 0){
+      S.cutT -= dt;
+      const ca = clamp(S.cutT / 0.3, 0, 1);
+      hudG.rect(bx + bw * k - 1.5, by - 3, 3, bh + 6).fill({ color: 0xffffff, alpha: 0.9 * ca });
+      glowAt(5 + bi * 2, bx + bw * k, by + bh / 2, 34, bh + 34, barCol, 0.65 * ca);
+    }
+    // 狂怒相位线（50%）
+    hudG.moveTo(bx + bw / 2, by - 5).lineTo(bx + bw / 2, by + bh + 5).stroke({ width: 1.5, color: 0xffffff, alpha: 0.35 });
+    glowAt(4 + bi * 2, bx + bw * k * 0.5, by + bh / 2, bw * k + 60, bh + 18, barCol, 0.18);
+    // 两端菱形铆钉
+    for(const ex of [bx - 14, bx + bw + 14]){
+      hudG.moveTo(ex, by + bh / 2 - 7).lineTo(ex + 7, by + bh / 2).lineTo(ex, by + bh / 2 + 7).lineTo(ex - 7, by + bh / 2).closePath()
+        .fill({ color: 0x0a0614, alpha: 0.9 });
+      hudG.moveTo(ex, by + bh / 2 - 7).lineTo(ex + 7, by + bh / 2).lineTo(ex, by + bh / 2 + 7).lineTo(ex - 7, by + bh / 2).closePath()
+        .stroke({ width: 1.2, color: barCol, alpha: 0.9 });
+    }
+  });
+
+  // 名称：单 BOSS 大字原名上方格式；双子每条左侧小字、各自配色（一眼区分两只吾二）
+  if(!dual){
+    const b = bs[0], barCol = b.enraged ? 0xff5e3d : b.color;
+    HT.boss.anchor.set(0.5, 0);
+    HT.boss.text = b.enraged ? `狂 怒 · ${bossNameOf(b)}` : `${bossNameOf(b)}  ${bossEnOf(b)}`;
+    HT.boss.style.fill = b.enraged ? 0xffb09a : 0xffd7f4;
+    setFs(HT.boss, uiTouch ? 9 : 11);
+    const nameY = uiTouch ? byTop + bh + 2 : byTop - 18;
+    HT.boss.position.set(W / 2, nameY);
+    if(HT.boss2) HT.boss2.text = '';
+    // 名称两侧装饰线
+    const nbw = HT.boss.width || 120;
+    hudG.moveTo(W / 2 - nbw / 2 - 42, nameY + 6).lineTo(W / 2 - nbw / 2 - 12, nameY + 6).stroke({ width: 1, color: barCol, alpha: 0.5 });
+    hudG.moveTo(W / 2 + nbw / 2 + 12, nameY + 6).lineTo(W / 2 + nbw / 2 + 42, nameY + 6).stroke({ width: 1, color: barCol, alpha: 0.5 });
+  } else {
+    bs.forEach((b, bi) => {
+      const T = bi === 0 ? HT.boss : HT.boss2;
+      if(!T) return;
+      T.anchor.set(1, 0.5);
+      T.text = (b.enraged ? '狂怒 · ' : '') + bossNameOf(b);
+      T.style.fill = b.enraged ? 0xffb09a : b.color;
+      setFs(T, uiTouch ? 8 : 11);
+      T.position.set(bx - 12, byTop + bi * (bh + gap) + bh / 2);
+    });
   }
-  state.bossBarK = k;
-  // 外框双线 + 底座（整条直角硬边，对标 demo 的像素断切感）
-  hudG.rect(bx - 4, by - 4, bw + 8, bh + 8).stroke({ width: 1, color: barCol, alpha: 0.3 });
-  hudG.rect(bx, by, bw, bh).fill({ color: 0x0a0614, alpha: 0.82 });
-  hudG.rect(bx, by, bw * k, bh).fill({ color: barCol, alpha: 0.95 });
-  // 坠落碎块（硬边方块：画在主条之后、凹槽之前，剥落瞬间与血条严丝合缝）
-  for(let i = state.bossChunks.length - 1; i >= 0; i--){
-    const c = state.bossChunks[i];
-    c.t += dt;
-    if(c.t > 0){ c.v += 520 * dt; c.y += c.v * dt; }
-    const p = clamp(c.t / 0.7, 0, 1);
-    if(p >= 1){ state.bossChunks.splice(i, 1); continue; }
-    hudG.rect(bx + bw * c.x0, by + c.y, bw * (c.x1 - c.x0) + 0.5, bh)
-      .fill({ color: 0xffffff, alpha: 0.95 * (1 - p) });
-  }
-  // 十格凹槽（分段读数）
-  for(let i = 1; i < 10; i++){
-    hudG.rect(bx + bw * i / 10 - 1, by + 2, 2, bh - 4).fill({ color: 0x0a0614, alpha: 0.85 });
-  }
-  hudG.rect(bx, by, bw, bh).stroke({ width: 1.5, color: barCol, alpha: 0.85 });
-  // 断口灼热（画最上层，掉血瞬间断口一道亮白 + 同色光晕）
-  if(state.bossCutT > 0){
-    state.bossCutT -= dt;
-    const ca = clamp(state.bossCutT / 0.3, 0, 1);
-    hudG.rect(bx + bw * k - 1.5, by - 3, 3, bh + 6).fill({ color: 0xffffff, alpha: 0.9 * ca });
-    glowAt(5, bx + bw * k, by + bh / 2, 34, bh + 34, barCol, 0.65 * ca);
-  }
-  // 狂怒相位线（50%）
-  hudG.moveTo(bx + bw / 2, by - 5).lineTo(bx + bw / 2, by + bh + 5).stroke({ width: 1.5, color: 0xffffff, alpha: 0.35 });
-  glowAt(4, bx + bw * k * 0.5, by + bh / 2, bw * k + 60, bh + 18, barCol, 0.18);
-  // 两端菱形铆钉
-  for(const ex of [bx - 14, bx + bw + 14]){
-    hudG.moveTo(ex, by + bh / 2 - 7).lineTo(ex + 7, by + bh / 2).lineTo(ex, by + bh / 2 + 7).lineTo(ex - 7, by + bh / 2).closePath()
-      .fill({ color: 0x0a0614, alpha: 0.9 });
-    hudG.moveTo(ex, by + bh / 2 - 7).lineTo(ex + 7, by + bh / 2).lineTo(ex, by + bh / 2 + 7).lineTo(ex - 7, by + bh / 2).closePath()
-      .stroke({ width: 1.2, color: barCol, alpha: 0.9 });
-  }
-  const bkName = bs.length > 1 ? bs.map(bossNameOf).join(' × ') : bossNameOf(b);
-  const bkEn = bs.length > 1 ? 'T W I N S' : bossEnOf(b);
-  HT.boss.text = enraged ? `狂 怒 · ${bkName}` : `${bkName}  ${bkEn}`;
-  HT.boss.style.fill = enraged ? 0xffb09a : 0xffd7f4;
-  setFs(HT.boss, uiTouch ? 9 : 11);
-  HT.boss.position.set(W / 2, nameY);
-  // 名称两侧装饰线
-  const nbw = HT.boss.width || 120;
-  hudG.moveTo(W / 2 - nbw / 2 - 42, nameY + 6).lineTo(W / 2 - nbw / 2 - 12, nameY + 6).stroke({ width: 1, color: barCol, alpha: 0.5 });
-  hudG.moveTo(W / 2 + nbw / 2 + 12, nameY + 6).lineTo(W / 2 + nbw / 2 + 42, nameY + 6).stroke({ width: 1, color: barCol, alpha: 0.5 });
 }
 
 function updateMarkers(){
