@@ -93,8 +93,9 @@
    弹核球 NEON PINBALL   v4
    渲染：PixiJS v8（预烘焙发光贴图 + 对象池，彻底去掉 shadowBlur）
    WASD 移动 / J 射击 / K 冲刺 / H 修复 / 空格 过载        （L 场域已移除）
+   冲刺：撞人没撞死 CD -15% · 撞死 CD -80%（每个敌人每次冲刺结算一次）
    移动端横屏：左侧虚拟摇杆移动 · 右侧按钮 射击/冲刺/修复/过载 · 左侧竖排 常驻技能
-   v4：性能重构 · 等级经验 · 升级三选一强化卡（56 种效果 × 5 阶，部分带副作用）
+   v4：性能重构 · 等级经验 · 升级三选一强化卡（69 种效果 × 5 阶，必出一张常驻技能卡，部分带副作用）
    ========================================================== */
 
 // ---------------- 音频引擎 ----------------
@@ -774,7 +775,7 @@ function freeEnemySprites(e){ for(const s of e.sprites) rel(s); }
 const CFG = {
   accel: 2100, damp: 2.3, maxSpeed: 560,
   bulletSpeed: 860, bulletDmg: 9, fireRate: 0.13,
-  dashSpeed: 1450, dashTime: 0.16, dashCd: 1.1, dashDmg: 30,
+  dashSpeed: 1500, dashTime: 0.18, dashCd: 0.9, dashDmg: 45,
   overloadCost: 50, overloadTime: 4.5
 };
 
@@ -791,6 +792,7 @@ const player = {
   x: 0, y: 0, vx: 0, vy: 0, r: 13,
   hp: 100, maxHp: 100, energy: 100, maxEnergy: 100,
   angle: 0, invuln: 0, fireCd: 0, dashCd: 0, dashTime: 0, healCd: 0,
+  charges: 1, dashHits: null, dashGuardT: 0, ramMul: 0, orbitT: 0, orbitDmg: 0, orbitTick: 0,
   overload: 0, hitFlash: 0, shield: 0, rebound: 0, reboundT: 0,
   power: 0, powerType: null, powerMax: 9,
   blessDmg: 0, blessShot: 0, frenzy: 0, webSlow: 0, coucouT: 0,
@@ -806,6 +808,8 @@ function MDEF(){
     chainR:1, chainD:1, novaEvery:12, comboKeep:0, comboScale:0.08,
     magnet:1, pickE:1, pickLife:0, drop:1, xp:1, score:1,
     spd:1, acc:1, dashCd:1, dashDmg:1, dashInv:0, dashEnergy:0,
+    dashBoomD:0, dashBoomR:0, dashChain:0, dashR:0, dashKillE:0,
+    dashSlow:0, dashRebound:0, dashGuard:0, dashCharges:0, dashSpd:1,
     reboundMax:3, reboundPer:1, wallKeep:0.88,
     enRegen:1, overRegen:1, overCost:1, overTime:1,
     heal:1, shieldCap:2, invuln:0, dmgTaken:1, thorns:0,
@@ -815,7 +819,7 @@ function MDEF(){
 }
 let M = MDEF();
 
-// ---------------- 强化卡池（56 种效果 × 5 阶） ----------------
+// ---------------- 强化卡池（69 种效果 × 5 阶） ----------------
 const TIER_NAME = ['普通', '精良', '稀有', '史诗', '传说'];
 const TIER_COL = [0x9fb0c8, 0x5ffbf1, 0x7fb8ff, 0xb06bff, 0xffc83d];
 
@@ -832,6 +836,8 @@ const CARD_DEFS = [
   { n:'磁轨追踪', c:0xff9a6a, v:[1.2,2,3,4.2,5.5], d:v=>`子弹追踪强度 +${v}`, a:(m,v)=>{ m.homing += v; } },
   { n:'会心一击', c:0xff9a6a, v:[.05,.09,.14,.20,.27], d:v=>`暴击率 +${pct(v)}`, a:(m,v)=>{ m.crit += v; } },
   { n:'致命暴击', c:0xff9a6a, v:[.3,.6,1,1.5,2.2], d:v=>`暴击倍率 +${v.toFixed(1)}×`, a:(m,v)=>{ m.critMul += v; } },
+  { n:'质量弹',   c:0x7fb8ff, v:[.40,.70,1.05,1.45,1.90], d:v=>`弹体体积 +${pct(v)}`, s:'射速 -15% · 弹速 -15%', a:(m,v)=>{ m.bR *= 1+v; m.rate *= 1.15; m.bSpd *= 0.85; } },
+  { n:'狙击协议', c:0x7fb8ff, v:[.18,.34,.52,.72,.95], d:v=>`子弹寿命 +${pct(v)}`, s:'射速 -15%', a:(m,v)=>{ m.bLife *= 1+v; m.bSpd *= 1 + v*0.4; m.rate *= 1.15; } },
   { n:'嗜血弹头', c:0xff9a6a, v:[.02,.04,.07,.10,.14], d:v=>`造成伤害的 ${pct(v)} 转为治疗`, a:(m,v)=>{ m.ls += v; } },
   { n:'嗜杀成性', c:0xff9a6a, v:[1,2,3,4.5,6], d:v=>`击杀回复 ${v} 点生命`, a:(m,v)=>{ m.killHeal += v; } },
   { n:'收割者',   c:0xff9a6a, v:[2.5,4.5,7,10,13.5], d:v=>`击杀回复 ${v} 点生命`, s:'能量回复 -15%', a:(m,v)=>{ m.killHeal += v; m.enRegen *= 0.85; } },
@@ -853,12 +859,20 @@ const CARD_DEFS = [
   { n:'疾风步',   c:0x7fb8ff, v:[.06,.12,.19,.27,.36], d:v=>`移动速度 +${pct(v)}`, a:(m,v)=>{ m.spd *= 1+v; } },
   { n:'速度恶魔', c:0x7fb8ff, v:[.22,.40,.60,.84,1.12], d:v=>`移动速度 +${pct(v)}`, s:'受到伤害 +12%', a:(m,v)=>{ m.spd *= 1+v; m.dmgTaken *= 1.12; } },
   { n:'伺服推进', c:0x7fb8ff, v:[.10,.20,.32,.46,.62], d:v=>`加速度 +${pct(v)}`, a:(m,v)=>{ m.acc *= 1+v; } },
-  { n:'短跑健将', c:0x7fb8ff, v:[.08,.15,.23,.31,.40], d:v=>`冲刺冷却 -${pct(v)}`, a:(m,v)=>{ m.dashCd *= 1-v; } },
+  { n:'短跑健将', c:0x7fb8ff, v:[.10,.18,.28,.40,.55], d:v=>`冲刺冲程 +${pct(v)}`, a:(m,v)=>{ m.dashSpd *= 1+v; } },
   { n:'攻城锤',   c:0x7fb8ff, v:[.18,.36,.58,.85,1.18], d:v=>`冲刺伤害 +${pct(v)}`, a:(m,v)=>{ m.dashDmg *= 1+v; } },
   { n:'鬼影步',   c:0x7fb8ff, v:[.06,.12,.20,.30,.42], d:v=>`冲刺无敌延长 +${v}s`, a:(m,v)=>{ m.dashInv += v; } },
   { n:'疾风回能', c:0x7fb8ff, v:[6,11,17,25,34], d:v=>`每次冲刺回复 ${v} 能量`, a:(m,v)=>{ m.dashEnergy += v; } },
   { n:'反弹大师', c:0x7fb8ff, v:[1,1,2,2,3], d:v=>`反弹层数上限 +${v}`, a:(m,v)=>{ m.reboundMax += v; } },
   { n:'反弹精通', c:0x7fb8ff, v:[.20,.40,.65,.95,1.30], d:v=>`每层反弹加速 +${pct(v)}`, a:(m,v)=>{ m.reboundPer *= 1+v; } },
+  { n:'爆裂冲刺', c:0x7fb8ff, v:[20,36,58,88,130], d:v=>`冲刺结束时引爆周围 ${v} 伤害`, a:(m,v)=>{ m.dashBoomD += v; m.dashBoomR = Math.max(m.dashBoomR, 110 + v * 0.5); } },
+  { n:'连锁冲撞', c:0x7fb8ff, v:[.25,.45,.70,1.0,1.4], d:v=>`冲刺撞击伤害的 ${pct(v)} 传导给附近敌人`, a:(m,v)=>{ m.dashChain += v; } },
+  { n:'巨岩冲撞', c:0x7fb8ff, v:[14,24,36,52,72], d:v=>`冲刺撞击半径 +${v} · 撞击伤害 +15%`, a:(m,v)=>{ m.dashR += v; m.dashDmg *= 1.15; } },
+  { n:'双重冲刺', c:0x7fb8ff, v:[1,1,1,2,2], d:v=>`冲刺充能上限 +${v}`, s:'冲刺冷却 +8%', a:(m,v)=>{ m.dashCharges += v; m.dashCd *= 1.08; } },
+  { n:'动能回收', c:0x7fb8ff, v:[6,10,16,24,34], d:v=>`冲刺撞死回复 ${v} 能量`, a:(m,v)=>{ m.dashKillE += v; } },
+  { n:'震荡冲撞', c:0x7fb8ff, v:[.20,.32,.46,.62,.80], d:v=>`被撞中的敌人减速 ${pct(v)} (1s)`, a:(m,v)=>{ m.dashSlow = Math.max(m.dashSlow, v); } },
+  { n:'反弹充能', c:0x7fb8ff, v:[1,1,2,2,3], d:v=>`冲刺撞人立即叠加 ${v} 层反弹`, a:(m,v)=>{ m.dashRebound += v; } },
+  { n:'余势护体', c:0x7fb8ff, v:[.8,1.3,1.9,2.6,3.4], d:v=>`冲刺结束后 ${v}s 内受伤减半`, a:(m,v)=>{ m.dashGuard += v; } },
   { n:'能量循环', c:0x5affc8, v:[.18,.34,.54,.78,1.08], d:v=>`能量回复 +${pct(v)}`, a:(m,v)=>{ m.enRegen *= 1+v; } },
   { n:'过载回充', c:0x5affc8, v:[.40,.75,1.20,1.75,2.50], d:v=>`过载期间能量回复 +${pct(v)}`, a:(m,v)=>{ m.overRegen *= 1+v; } },
   { n:'精简过载', c:0x5affc8, v:[.08,.15,.23,.31,.40], d:v=>`过载消耗 -${pct(v)}`, a:(m,v)=>{ m.overCost *= 1-v; } },
@@ -877,8 +891,6 @@ const CARD_DEFS = [
   { n:'缓兵之计', c:0xb06bff, v:[.10,.20,.32,.46,.62], d:v=>`敌人出现间隔 +${pct(v)}`, a:(m,v)=>{ m.spawnDelay *= 1+v; } },
   { n:'玻璃大炮', c:0xff3d6e, v:[.35,.60,.90,1.30,1.85], d:v=>`子弹伤害 +${pct(v)}`, s:'受到伤害 +25%', a:(m,v)=>{ m.dmg *= 1+v; m.dmgTaken *= 1.25; } },
   { n:'嗜血契约', c:0xff3d6e, v:[.09,.16,.25,.36,.50], d:v=>`造成伤害的 ${pct(v)} 转为治疗`, s:'修复量与能量拾取 -40%', a:(m,v)=>{ m.ls += v; m.heal *= 0.6; m.pickE *= 0.6; } },
-  { n:'质量弹',   c:0x7fb8ff, v:[.40,.70,1.05,1.45,1.90], d:v=>`弹体体积 +${pct(v)}`, s:'射速 -15% · 弹速 -15%', a:(m,v)=>{ m.bR *= 1+v; m.rate *= 1.15; m.bSpd *= 0.85; } },
-  { n:'狙击协议', c:0x7fb8ff, v:[.18,.34,.52,.72,.95], d:v=>`子弹寿命 +${pct(v)}`, s:'射速 -15%', a:(m,v)=>{ m.bLife *= 1+v; m.bSpd *= 1 + v*0.4; m.rate *= 1.15; } },
   { n:'钢铁洪流', c:0xffe45c, v:[.10,.18,.28,.40,.55], d:v=>`敌人生命 -${pct(v)}`, s:'敌人速度 -4%', a:(m,v)=>{ m.foeHp *= 1-v; m.foeSpd *= 0.96; } },
   { n:'过载核心', c:0x5affc8, v:[.6,.9,1.3,1.8,2.4], d:v=>`过载时长 +${v.toFixed(1)}×`, s:'过载耗能 +12%', a:(m,v)=>{ m.overTime *= 1+v; m.overCost *= 1.12; } }
 ];
@@ -916,6 +928,15 @@ const ACTIVE_DEFS = [
     a:()=>{} },
   { id:'magnet', n:'磁暴牵引', c:0x5ffbf1, cd:12, skill:true, v:[3, 4, 5, 6, 7.5],
     d:v=>`主动：${v}s 内全图拾取物被吸向核心`,
+    a:()=>{} },
+  { id:'ram', n:'蛮牛猛冲', c:0x7fb8ff, cd:8, skill:true, v:[2, 2.6, 3.2, 4, 5],
+    d:v=>`主动：立即发动强化猛冲 · 撞击伤害 ×${v.toFixed(1)} · 冲程 +50%`,
+    a:()=>{} },
+  { id:'shock', n:'冲击星环', c:0x5ffbf1, cd:12, skill:true, v:[1, 1.4, 1.8, 2.3, 2.9],
+    d:v=>`主动：击退周围敌人 · 伤害 ${Math.round(55*v)} · 减速 ${(1+v).toFixed(1)}s`,
+    a:()=>{} },
+  { id:'orbit', n:'卫星刃环', c:0xff9ad5, cd:18, skill:true, v:[4, 5, 6, 7.5, 9],
+    d:v=>`主动：${v}s 内环绕刀刃持续切割触碰的敌人`,
     a:()=>{} }
 ];
 const ACTIVE_BY_ID = {};
@@ -985,6 +1006,42 @@ function castActive(i){
       addFloat(p.x, p.y - 34, '磁暴牵引', 0x5ffbf1, 17);
       spawnRing(p.x, p.y, 0x5ffbf1, 130, 0.5, 2.5);
       tone(300, 0.35, 'sine', 0.14, 620);
+      break;
+    case 'ram':
+      p.charges = Math.max(p.charges, 1);
+      p.dashCd = 0;
+      tryDash();
+      p.charges = Math.min(1 + M.dashCharges, p.charges + 1);   // 白送一次，不耗充能
+      p.dashTime = CFG.dashTime * 1.5;
+      p.invuln = Math.max(p.invuln, p.dashTime + 0.1);
+      p.ramMul = v;
+      addFloat(p.x, p.y - 34, '蛮牛猛冲', 0x7fb8ff, 17);
+      spawnRing(p.x, p.y, 0x7fb8ff, 110, 0.4, 3);
+      break;
+    case 'shock': {
+      const R = 240 + 40 * v;
+      splashDamage(p.x, p.y, R, 55 * v * M.dmg, 900);
+      for(const o of enemies){
+        if(Math.hypot(o.x - p.x, o.y - p.y) < R + o.r){
+          o.slowT = Math.max(o.slowT || 0, 1 + v);
+          o.slowAmt = Math.max(o.slowAmt || 0, 0.5);
+        }
+      }
+      spawnRing(p.x, p.y, 0x5ffbf1, 138, 0.5, 3);
+      spawnRing(p.x, p.y, 0xffffff, 100, 0.4, 2.5);
+      spawnParticles(p.x, p.y, 30, 0x5ffbf1, 420, 0.55, 3);
+      state.shake = Math.max(state.shake, 10);
+      addFloat(p.x, p.y - 34, '冲击星环', 0x5ffbf1, 17);
+      SFX.nova();
+      break;
+    }
+    case 'orbit':
+      p.orbitT = v;
+      p.orbitDmg = (10 + 7 * v) * M.dmg;
+      p.orbitTick = 0;
+      addFloat(p.x, p.y - 34, '卫星刃环', 0xff9ad5, 17);
+      spawnRing(p.x, p.y, 0xff9ad5, 110, 0.5, 2.5);
+      SFX.power();
       break;
   }
 }
@@ -1236,7 +1293,7 @@ function syncTouch(){
     el.style.color = cd > 0 ? '#5d6b7d' : hex;
     el.style.opacity = (cd > 0 || dim) ? '0.45' : '1';
   };
-  setBtn(touchEls.dash, '冲刺', '#7fb8ff', player.dashCd, false);
+  setBtn(touchEls.dash, '冲刺', '#7fb8ff', player.charges > 0 ? 0 : player.dashCd, false);
   setBtn(touchEls.heal, '修复', '#5affc8', player.healCd, player.energy < 30 || player.hp >= player.maxHp);
   if(player.overload > 0){
     const t = player.overload.toFixed(1);
@@ -2107,6 +2164,8 @@ function startGame(){
   player.maxHp = 100; player.hp = 100;
   player.maxEnergy = 100; player.energy = 100;
   player.invuln = 2.0; player.fireCd = 0; player.dashCd = 0; player.dashTime = 0;
+  player.charges = 1; player.dashHits = null; player.dashGuardT = 0;
+  player.ramMul = 0; player.orbitT = 0; player.orbitDmg = 0; player.orbitTick = 0;
   player.healCd = 0; player.overload = 0; player.hitFlash = 0;
   player.power = 0; player.powerType = null;
   player.shield = 0; player.rebound = 0; player.reboundT = 0;
@@ -2137,19 +2196,18 @@ function startGame(){
 // ---------------- 技能 ----------------
 function tryDash(){
   const p = player;
-  if(p.dashCd > 0) return;
+  if(p.charges <= 0) return;
   let dx = p.moveDir.x, dy = p.moveDir.y;
   if(!dx && !dy){ dx = Math.cos(p.angle); dy = Math.sin(p.angle); }
   const l = Math.hypot(dx, dy) || 1;
   dx /= l; dy /= l;
-  p.vx = dx * CFG.dashSpeed; p.vy = dy * CFG.dashSpeed;
+  p.vx = dx * CFG.dashSpeed * M.dashSpd; p.vy = dy * CFG.dashSpeed * M.dashSpd;
   p.dashTime = CFG.dashTime;
-  p.dashCd = CFG.dashCd * M.dashCd;
+  p.charges--;
+  if(p.dashCd <= 0) p.dashCd = CFG.dashCd * M.dashCd;   // 开始为下一层充能
+  p.dashHits = new Set();                              // 本次冲刺的撞击/撞死结算名单
   p.invuln = Math.max(p.invuln, CFG.dashTime + 0.12 + M.dashInv);
   if(M.dashEnergy > 0) p.energy = Math.min(p.maxEnergy, p.energy + M.dashEnergy);
-  if(M.dashBurstN){
-    // (保留位：无卡使用)
-  }
   state.shake = Math.max(state.shake, 7);
   SFX.dash();
   spawnParticles(p.x, p.y, 20, 0x5ffbf1, 340, 0.45, 3.2);
@@ -2225,7 +2283,7 @@ function rollTier(){
 function rollOffer(){
   // 特殊规则：第一次升级三选一必定全是【吾二】，之后永不出现
   if(!state.wuerDone) return [{ def: WUER_DEF, tier: 4 }, { def: WUER_DEF, tier: 4 }, { def: WUER_DEF, tier: 4 }];
-  // 保底规则：三张卡中至少一张是常驻技能（随机槽位）
+  // 保底规则：三张卡中至少一张是常驻技能（随机槽位）；其余从全卡池随机，玩家自由组合流派
   const actSlot = Math.floor(Math.random() * 3);
   const seen = {};
   const out = [];
@@ -2747,6 +2805,7 @@ function hurtPlayer(dmg, src){
 
   dmg *= M.dmgTaken;
   if(p.blessDmg > 0) dmg *= 0.7;   // 吾二的祝福：受伤 -30%
+  if(p.dashGuardT > 0) dmg *= 0.5; // 余势护体：冲刺后短暂受伤减半
   if(M.thorns > 0 && src) damageEnemy(src, M.thorns, 0, 0);
 
   p.hp -= dmg;
@@ -2911,11 +2970,39 @@ function updatePlayer(dt){
   const p = player;
   p.invuln = Math.max(0, p.invuln - dt);
   p.fireCd = Math.max(0, p.fireCd - dt);
-  p.dashCd = Math.max(0, p.dashCd - dt);
+  // 冲刺充能：充能未满时按 CD 逐层回复（基础 1 层，双重冲刺卡可扩）
+  const maxCh = 1 + M.dashCharges;
+  if(p.charges < maxCh){
+    p.dashCd -= dt;
+    if(p.dashCd <= 0){ p.charges++; p.dashCd = p.charges < maxCh ? CFG.dashCd * M.dashCd : 0; }
+  } else p.dashCd = 0;
   p.healCd = Math.max(0, p.healCd - dt);
   p.overload = Math.max(0, p.overload - dt);
   p.hitFlash = Math.max(0, p.hitFlash - dt);
+  const wasDashing = p.dashTime > 0;
   p.dashTime = Math.max(0, p.dashTime - dt);
+  if(wasDashing && p.dashTime <= 0){
+    if(M.dashBoomD > 0){   // 爆裂冲刺：冲刺结束引爆周围
+      splashDamage(p.x, p.y, M.dashBoomR, M.dashBoomD * M.dashDmg, 520);
+      spawnRing(p.x, p.y, 0x7fb8ff, Math.min(138, M.dashBoomR), 0.4, 3);
+      spawnParticles(p.x, p.y, 18, 0x7fb8ff, 320, 0.5, 3);
+      SFX.chain();
+    }
+    if(M.dashGuard > 0) p.dashGuardT = M.dashGuard;   // 余势护体
+    p.ramMul = 0;
+  }
+  p.dashGuardT = Math.max(0, p.dashGuardT - dt);
+  // 卫星刃环：环绕刀刃按节拍切割
+  if(p.orbitT > 0){
+    p.orbitT = Math.max(0, p.orbitT - dt);
+    p.orbitTick -= dt;
+    if(p.orbitTick <= 0){
+      p.orbitTick = 0.3;
+      const hitN = splashDamage(p.x, p.y, 100, p.orbitDmg, 260);
+      spawnRing(p.x, p.y, 0xff9ad5, 100, 0.3, 2);
+      if(hitN > 0) SFX.hit();
+    }
+  }
   p.power = Math.max(0, p.power - dt);
   if(p.power <= 0) p.powerType = null;
   p.reboundT = Math.max(0, p.reboundT - dt);
@@ -3292,15 +3379,40 @@ function updateEnemies(dt){
     }
 
     const pd = Math.hypot(e.x - player.x, e.y - player.y);
-    if(pd < e.r + player.r){
+    if(pd < e.r + player.r + (player.dashTime > 0 ? M.dashR : 0)){
       if(player.dashTime > 0){
         const kx = (e.x - player.x) / (pd || 1);
         const ky = (e.y - player.y) / (pd || 1);
-        damageEnemy(e, CFG.dashDmg * M.dashDmg + 6 * player.rebound, kx * 620, ky * 620);
+        const hitDmg = CFG.dashDmg * M.dashDmg * (player.ramMul > 0 ? player.ramMul : 1) + 6 * player.rebound;
+        damageEnemy(e, hitDmg, kx * 620, ky * 620);
         state.shake = Math.max(state.shake, 10);
         spawnParticles(e.x, e.y, 16, 0x5ffbf1, 340, 0.5, 3);
         spawnRing(e.x, e.y, 0x5ffbf1, 70, 0.35, 3);
         player.vx *= 0.6; player.vy *= 0.6;
+        // 冲刺核心机制：撞人没撞死 CD -15%，撞死 CD -80%，每个敌人每次冲刺只结算一次
+        if(!player.dashHits) player.dashHits = new Set();
+        if(!player.dashHits.has(e.id)){
+          player.dashHits.add(e.id);
+          const killed = e.hp <= 0;
+          const total = CFG.dashCd * M.dashCd;
+          if(killed){
+            player.dashCd = Math.max(0, player.dashCd - total * 0.8);
+            addFloat(player.x, player.y - 44, '撞死 CD -80%', 0x7fb8ff, 13);
+          } else {
+            player.dashCd = Math.max(0, player.dashCd - total * 0.15);
+            addFloat(player.x, player.y - 44, '撞人 CD -15%', 0x9fd8ff, 13);
+          }
+          if(killed && M.dashKillE > 0){
+            player.energy = Math.min(player.maxEnergy, player.energy + M.dashKillE);
+            addFloat(e.x, e.y - e.r - 24, '+' + Math.round(M.dashKillE) + ' 能量', 0x5ffbf1, 13);
+          }
+          if(M.dashChain > 0){
+            const cn = splashDamage(e.x, e.y, 120, hitDmg * M.dashChain, 320);
+            if(cn > 0){ spawnRing(e.x, e.y, 0x7fb8ff, 90, 0.3, 2); SFX.chain(); }
+          }
+          if(M.dashSlow > 0){ e.slowT = Math.max(e.slowT || 0, 1); e.slowAmt = Math.max(e.slowAmt || 0, M.dashSlow); }
+          if(M.dashRebound > 0) for(let k2 = 0; k2 < M.dashRebound; k2++) addReboundStack(player.x, player.y);
+        }
       } else {
         hurtPlayer(e.dmg, e);
         const kx = (player.x - e.x) / (pd || 1);
@@ -4809,7 +4921,7 @@ function drawHUD(){
   if(!touchHud){
   const skills = [
     { key: 'J', name: '射击', cd: 0, max: 0, c: 0x5ffbf1 },
-    { key: 'K', name: '冲刺', cd: p.dashCd, max: CFG.dashCd * M.dashCd, c: 0x7fb8ff },
+    { key: 'K', name: M.dashCharges > 0 ? '冲刺×' + Math.max(0, p.charges) : '冲刺', cd: p.charges > 0 ? 0 : p.dashCd, max: CFG.dashCd * M.dashCd, c: 0x7fb8ff },
     { key: 'H', name: '修复', cd: p.healCd, max: 3.5, c: 0x5affc8 },
     { key: 'SPC', name: '过载', cd: p.overload > 0 ? -1 : 0, max: 0, c: 0xffe45c }
   ];
@@ -5274,13 +5386,14 @@ function clearCardUI(){
 const INTRO_SKILL_BLURB = {
   nova: '新星冲击 · 范围伤害', stasis: '全场敌人与敌弹减速',
   aegis: '无敌数秒 + 1 层护盾', frenzy: '射速与伤害大幅提升',
-  blink: '向前瞬移 · 短暂无敌', magnet: '全图拾取物吸附'
+  blink: '向前瞬移 · 短暂无敌', magnet: '全图拾取物吸附',
+  ram: '强化猛冲 · 撞碎路径', shock: '范围击退 · 减速敌人', orbit: '环绕刀刃持续切割'
 };
 const INTRO_SECTIONS = [
   { title: '基本操作', color: 0x5ffbf1, items: [
     { keys: ['W','A','S','D'], text: '移动', dim: '撞墙反弹可叠加速度' },
     { keys: ['J'], text: '射击', dim: '按住连发' },
-    { keys: ['K'], text: '冲刺', dim: '冲刺期间无敌 · 可撞伤敌人' },
+    { keys: ['K'], text: '冲刺', dim: '冲刺期间无敌 · 撞人 CD -15% · 撞死 CD -80%' },
     { keys: ['H'], text: '修复', dim: '消耗 30 能量回复生命' },
     { keys: ['空格'], text: '过载', dim: '消耗 50 能量 · 短时火力暴走' },
     { keys: ['1','2','3'], text: '释放常驻技能' },
@@ -5288,8 +5401,8 @@ const INTRO_SECTIONS = [
   ]},
   { title: '成长系统', color: 0xffe45c, items: [
     { text: '击破敌人获得经验 · 升级后三选一强化卡' },
-    { text: '61 种效果 × 5 阶', dim: '部分强力卡带有副作用，选前看清' },
-    { text: '每次升级必出常驻技能卡 · 栏满时需替换旧技能' },
+    { text: `${CARD_DEFS.length} 种效果 × 5 阶`, dim: '每次升级必出一张常驻技能卡' },
+    { text: '常驻技能栏满时需替换旧技能 · 部分强力卡带有副作用' },
     { text: '每 3 波随机变换地形', dim: 'BOSS 波不变' }
   ]},
   { title: '常驻技能', color: 0xb06bff, items:
