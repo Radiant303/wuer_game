@@ -2906,10 +2906,10 @@ const JUDER = { key:'juder', name:'金朵儿', en:'J I N D U O E R', color:0xffb
   tip:'好可爱的soulter · 花弹会绽放 · 花痴时输出她', hp:1.1, spd:0.9, dmg:1.0 };
 
 function bossNameOf(e){
-  return e.bossKind === 12 ? ETER.name : e.bossKind === 11 ? XQM.name : e.bossKind === 10 ? XUNYI.name : e.bossKind === 9 ? ZAOZI.name : e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
+  return e.bossKind === 13 ? JUDER.name : e.bossKind === 12 ? ETER.name : e.bossKind === 11 ? XQM.name : e.bossKind === 10 ? XUNYI.name : e.bossKind === 9 ? ZAOZI.name : e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
 }
 function bossEnOf(e){
-  return e.bossKind === 12 ? ETER.en : e.bossKind === 11 ? XQM.en : e.bossKind === 10 ? XUNYI.en : e.bossKind === 9 ? ZAOZI.en : e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
+  return e.bossKind === 13 ? JUDER.en : e.bossKind === 12 ? ETER.en : e.bossKind === 11 ? XQM.en : e.bossKind === 10 ? XUNYI.en : e.bossKind === 9 ? ZAOZI.en : e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
 }
 
 function spawnEnemyAt(type, x, y, elite = false, master = null){
@@ -3005,6 +3005,14 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
       e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * ETER.hp);
       e.dmg *= 1 + 0.13 * (t - 1);
       e.speed *= (1 + 0.05 * (t - 1)) * ETER.spd;
+    } else if(t === 7){
+      // 第七只 BOSS：金朵儿（金花仙子，绽放花弹 + 花痴窗口 + 漫天花雨）
+      e.bossKind = 13;
+      e.color = JUDER.color;
+      e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
+      e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * JUDER.hp);
+      e.dmg *= 1 + 0.13 * (t - 1);
+      e.speed *= (1 + 0.05 * (t - 1)) * JUDER.spd;
     } else {
       e.bossKind = (t - 1) % BOSS_KINDS.length;
       e.color = BOSS_KINDS[e.bossKind].color;
@@ -3024,6 +3032,8 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     e.apiVer = 0; e.apiCd = 6; e.rlCd = 8; e.timeoutT = 0; e.timedOut = 0;
     // EterUltimate 专用状态（口头禅翻转 / ULTIMATE 双阶段）
     e.flipCd = 11; e.ult1 = 0; e.ult2 = 0; e.ultPhase = 0; e.ultT = 0; e.ultSpiral = 0; e.ultRingT = 0;
+    // 金朵儿专用状态（花痴窗口 / 漫天花雨）
+    e.loveCd = 6; e.loveT = 0; e.rainT = 0; e.rainDone = 0; e.rainSpawn = 0;
     // 吾二专用状态（隐身 / 凑凑弹幕 / 猪猪召唤 / 温柔乡计时器）
     e.vis = 1; e.stealth = 0; e.stealthT = 4;
     e.coucouCd = 4; e.pigCd = 3; e.slowRingCd = 3; e.slowWarn = 0;
@@ -3061,6 +3071,7 @@ function bossEntrance(b){
   if(b.bossKind === 10) addFloat(b.x, b.y + b.r + 24, XUNYI.tip, 0xffffff, 14);
   if(b.bossKind === 11) addFloat(b.x, b.y + b.r + 24, XQM.tip, 0xffffff, 14);
   if(b.bossKind === 12) addFloat(b.x, b.y + b.r + 24, ETER.tip, 0xffffff, 14);
+  if(b.bossKind === 13) addFloat(b.x, b.y + b.r + 24, JUDER.tip, 0xffffff, 14);
   if(cleared > 0) addFloat(b.x, b.y + b.r + 22, '湮灭 ×' + cleared, 0xffd7f4, 15);
   tone(70, 0.7, 'sawtooth', 0.28, 36);
   noiseHit(0.5, 0.2, 300, 0.8);
@@ -3150,6 +3161,7 @@ function updateSpawner(dt){
 function damageEnemy(e, dmg, kx, ky){
   if(e.hp <= 0) return;
   if(M.exec > 0 && e.hp < e.maxHp * 0.35) dmg *= 1 + M.exec;
+  if(e.loveT > 0) dmg *= 1.3;   // 金朵儿花痴：受伤 +30%（输出窗口）
   e.hp -= dmg;
   // 温柔的吾二：受到伤害的一部分转为自身治疗（濒死/未成形时不触发）
   if(e.hp > 0 && e.wuerKind === 1 && e.spawnT <= 0){
@@ -3736,6 +3748,14 @@ function updateEBullets(dt){
         spawnRing(b.x, b.y, b.color, 80, 0.35, 2);
         tone(160, 0.2, 'sawtooth', 0.08, 90);
       }
+      if(b.bloom){   // 金朵儿的花弹：到期绽放成 5 片小瓣
+        for(let k2 = 0; k2 < 5; k2++){
+          const a2 = (b.seed || 0) + k2 * TAU / 5;
+          mkEBullet({ x: b.x, y: b.y, vx: Math.cos(a2) * 150, vy: Math.sin(a2) * 150, r: 5, dmg: 5, life: 2.6, color: b.color, pkt: TEX.pPetal });
+        }
+        spawnRing(b.x, b.y, b.color, 40, 0.25, 2);
+        spawnParticles(b.x, b.y, 8, b.color, 120, 0.4, 2.2);
+      }
       freeEBullet(b); ebullets.splice(i, 1);
     }
   }
@@ -3949,6 +3969,7 @@ function updateEnemies(dt){
 
 // ---------------- BOSS AI（按 bossKind 分派，弹幕规模随 bossTier 增强） ----------------
 function updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  if(e.bossKind === 13){ updateJuder(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 12){ updateEter(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 11){ updateXqm(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 10){ updateXunYi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
@@ -4727,6 +4748,78 @@ function updateEter(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
   e.y += (ny * dir + nx * side * 0.45) * spd * dt;
 }
 
+// ---------------- 金朵儿 AI（第七只 BOSS：金花仙子） ----------------
+// 金瓣花弹到期绽放分裂；口头禅「好可爱的soulter」= 花痴 2.5s 站着挨打（+30% 受伤，输出窗口）；
+// 半血一次漫天花雨（顶部落花 + 正弦漂移）。
+function updateJuder(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  const bCol = e.color;
+  const pw = 1 + 0.18 * ((e.bossTier || 1) - 1);
+  const aim = Math.atan2(dy, dx);
+  const petal = (a, sp, r, dm, bloom, extra) => {
+    mkEBullet(Object.assign({
+      x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
+      vx: Math.cos(a) * sp * pw, vy: Math.sin(a) * sp * pw,
+      r, dmg: dm * pw, life: 4.2, color: bCol, pkt: TEX.pPetal, bloom, seed: rand(0, TAU),
+    }, extra || {}));
+  };
+  if(e.spawnT > 0){ e.vis = 1; return; }
+
+  // ---- 漫天花雨（半血一次）：5s 顶部落花 ----
+  if(!e.rainDone && e.hp <= e.maxHp * 0.5){
+    e.rainDone = 1; e.rainT = 5;
+    addFloat(e.x, e.y - e.r - 26, '漫天花雨！', 0xffffff, 22);
+    spawnRing(e.x, e.y, bCol, 160, 0.5, 3);
+    tone(520, 0.3, 'sine', 0.1, 990);
+  }
+  if(e.rainT > 0){
+    e.rainT -= dt;
+    e.rainSpawn -= dt;
+    if(e.rainSpawn <= 0){
+      e.rainSpawn = 0.11;
+      mkEBullet({
+        x: rand(40, world.w - 40), y: 30,
+        vx: rand(-30, 30), vy: rand(120, 170) * pw,
+        r: 7, dmg: 6 * pw, life: 6, color: bCol, pkt: TEX.pPetal, bloom: 2, wob: 1.4,
+      });
+    }
+  }
+
+  // ---- 花痴发作：站着挨打 2.5s（+30% 受伤，输出窗口） ----
+  if(e.loveT > 0){
+    e.loveT -= dt;
+    if(Math.random() < 0.25) spawnParticles(e.x + rand(-20, 20), e.y - e.r - 10, 1, 0xff9ad0, 60, 0.4, 2.4);
+    if(e.loveT <= 0) e.loveCd = e.enraged ? 8 : 11;
+    return;
+  }
+  e.loveCd -= dt * slow;
+  if(e.loveCd <= 0 && e.spawnT <= 0){
+    e.loveT = 2.5;
+    addFloat(e.x, e.y - e.r - 28, '好可爱的soulter！', 0xff9ad0, 20);
+    addFloat(e.x, e.y - e.r - 10, '（花痴中…输出她！）', 0xffd7f4, 13);
+    spawnRing(e.x, e.y, 0xff9ad0, 110, 0.5, 2.5);
+    spawnParticles(e.x, e.y, 14, 0xff9ad0, 200, 0.5, 2.6);
+    tone(760, 0.25, 'sine', 0.09, 1180);
+    return;
+  }
+
+  // ---- 常规：金瓣花束（环状 burst，到期绽放） ----
+  e.shootCd -= dt * slow * aggro;
+  if(e.shootCd <= 0 && e.spawnT <= 0){
+    e.shootCd = (e.enraged ? 2.0 : 2.6) / Math.sqrt(pw);
+    const n2 = e.enraged ? 8 : 6;
+    const sp = rand(130, 170);
+    for(let k = 0; k < n2; k++) petal(e.wob + k * TAU / n2, sp, 9, 7, 1);
+    spawnRing(e.x, e.y, bCol, 90, 0.3, 2.5);
+    tone(300, 0.12, 'sine', 0.07, 460);
+  }
+
+  // ---- 移动：花仙子飘忽 ----
+  const side = (e.id % 2 === 0) ? 1 : -1;
+  const dir = d > 310 ? 1 : (d < 230 ? -0.8 : 0);
+  e.x += (nx * dir + -ny * side * 0.6) * spd * dt;
+  e.y += (ny * dir + nx * side * 0.6) * spd * dt;
+}
+
 // ---------------- 环 / 粒子 ----------------
 function updateRings(dt){
   for(let i = rings.length - 1; i >= 0; i--){
@@ -5070,7 +5163,7 @@ function syncEnemies(){
     const spawnK = clamp(1 - e.spawnT / (e.type === 'boss' ? 1.25 : 0.45), 0, 1);
     const flash = e.hitFlash > 0;
     // BOSS 本体/描边/泛光用 4× 高清贴图（单位 168），吾二用专属造型，其他敌人沿用原贴图（单位 42）
-    const bodyTex = e.type === 'boss' ? (e.bossKind === 12 ? TEX.pEter : e.bossKind === 11 ? TEX.pXqm : e.bossKind === 10 ? TEX.pXunYi : e.bossKind === 9 ? TEX.pZizi : e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
+    const bodyTex = e.type === 'boss' ? (e.bossKind === 13 ? TEX.pJuder : e.bossKind === 12 ? TEX.pEter : e.bossKind === 11 ? TEX.pXqm : e.bossKind === 10 ? TEX.pXunYi : e.bossKind === 9 ? TEX.pZizi : e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
     const bodyU = e.type === 'boss' ? 168 : 42;
     // 呼吸：本体半径 3% 脉动，增加活物感
     const sr = e.r * (0.55 + spawnK * 0.45) * (1 + 0.03 * Math.sin(state.time * 4 + e.wob));
@@ -5347,7 +5440,7 @@ function syncBullets(){
       const t2 = b.spr2;
       t2.texture = b.pkt;
       t2.position.set(b.x, b.y);
-      t2.scale.set(b.r * 1.7 / 72);
+      t2.scale.set(b.r * 1.7 / (b.pkt.height || 72));
       t2.tint = b.color;
       t2.alpha = b.flipT > 0 ? 0.5 + 0.5 * Math.sin(state.time * 30) : 0.95;   // 翻转过渡：闪烁
       const g2 = b.spr;
@@ -6500,6 +6593,7 @@ const INTRO_SECTIONS = [
     { text: '第四只是「薰衣霓」—— 已读不回的网友：每种 emoji 表情弹行为各异 · 她会周期性装死', span: true, color: 0xd8c0ff },
     { text: '第五只是「喵17qxm喵」—— 接口猫：口头禅 newapi · 429 限流射速 · 504 全场超时', span: true, color: 0xb8ff9a },
     { text: '第六只是「EterUltimate」—— 口头禅「可以的妈妈」：认可印章回能 · 否决印章伤人 · 双阶段 ULTIMATE', span: true, color: 0xffe9b8 },
+    { text: '第七只是「金朵儿」—— 口头禅「好可爱的soulter」：花弹会绽放 · 她花痴时站着挨打', span: true, color: 0xffd9a0 },
     { text: '首次升级是三张传说级祝福：吾二 / 喵雅喵（移速 +5% 换双子吾二）/ 喵斯喵（得分 +10% 换子弹 -10%）', span: true, color: 0xffb08a },
     { text: '黑化的吾二', color: 0xc8a8ff, dim: '速度飞快 · 伤害超高 · 黑化冲锋' },
     { text: '温柔的吾二', color: 0xa8ffd0, dim: '速度慢 · 伤害低 · 攻击她会回血' },
