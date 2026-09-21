@@ -423,6 +423,111 @@ function buildTextures(){
   TEX.pBoss = poly(8, 0.35);
   // BOSS 本体 4× 高清：阶职越高体积越大（半径 ×1.64/阶），高分辨率贴图保证放大后边缘依旧锐利
   TEX.pBossBig = poly(8, 0.35, 4);
+  // —— 吾二专属本体（4× 高清，顺序对齐 WUER_KINDS：dark / gentle / shy）——
+  // 白形供运行时 tint，五官 destination-out 挖空；暗核/亮核缩小后读作角色的「核心鼻」（见 drawEnemies 的 wu 缩放）
+  // 黑化：双弯角 + 荆棘鬃 + 怒眉狞笑
+  TEX.pWuerDark = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2 + 2, R = 30;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
+    for(const sx of [-1, 1]){                       // 双弯角：外扬上卷的大尖角
+      g.beginPath();
+      g.moveTo(cx + sx * 6, cy - 25);
+      g.quadraticCurveTo(cx + sx * 30, cy - 32, cx + sx * 21, cy - 39);
+      g.quadraticCurveTo(cx + sx * 18, cy - 28, cx + sx * 14, cy - 17);
+      g.closePath(); g.fill();
+    }
+    for(let i = 0; i < 12; i++){                    // 荆棘鬃：长短交错的尖刺（避开头顶角区）
+      const a = (-20 + i * 20) * Math.PI / 180;
+      const tip = R + 3.5 + (i % 3) * 2;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a - 0.13) * (R - 2), cy + Math.sin(a - 0.13) * (R - 2));
+      g.lineTo(cx + Math.cos(a) * tip, cy + Math.sin(a) * tip);
+      g.lineTo(cx + Math.cos(a + 0.13) * (R - 2), cy + Math.sin(a + 0.13) * (R - 2));
+      g.closePath(); g.fill();
+    }
+    g.globalCompositeOperation = 'destination-out'; // 五官挖空
+    g.fillStyle = '#000';
+    for(const sx of [-1, 1]){
+      g.beginPath();                                // 怒眉：外高内低的斜劈
+      g.moveTo(cx + sx * 27, cy - 22);
+      g.lineTo(cx + sx * 15, cy - 13);
+      g.lineTo(cx + sx * 15, cy - 8);
+      g.lineTo(cx + sx * 27, cy - 17);
+      g.closePath(); g.fill();
+      g.beginPath();                                // 眼：下压窄三角
+      g.moveTo(cx + sx * 14, cy - 1);
+      g.lineTo(cx + sx * 22, cy - 1);
+      g.lineTo(cx + sx * 18, cy + 4);
+      g.closePath(); g.fill();
+    }
+    g.beginPath();                                  // 狞笑：四齿锯齿嘴
+    g.moveTo(cx - 16, cy + 15); g.lineTo(cx + 16, cy + 15);
+    g.lineTo(cx + 13, cy + 21); g.lineTo(cx + 9, cy + 15);
+    g.lineTo(cx + 5, cy + 21); g.lineTo(cx + 1, cy + 15);
+    g.lineTo(cx - 3, cy + 21); g.lineTo(cx - 7, cy + 15);
+    g.lineTo(cx - 11, cy + 21); g.lineTo(cx - 15, cy + 15);
+    g.closePath(); g.fill();
+    g.globalCompositeOperation = 'source-over';
+  });
+  // 温柔：垂耳 + 头顶嫩芽 + 闭眼微笑
+  TEX.pWuerGentle = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2 + 4, R = 30;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    for(const sx of [-1, 1]){                       // 垂耳：先扬后垂的长耳（有机曲线）
+      g.beginPath();
+      g.moveTo(cx + sx * 10, cy - 24);
+      g.bezierCurveTo(cx + sx * 30, cy - 33, cx + sx * 40, cy + 6, cx + sx * 26, cy + 28);
+      g.quadraticCurveTo(cx + sx * 21, cy + 34, cx + sx * 20, cy + 26);
+      g.bezierCurveTo(cx + sx * 29, cy + 8, cx + sx * 20, cy - 14, cx + sx * 4, cy - 18);
+      g.closePath(); g.fill();
+    }
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.92)'; g.lineCap = 'round'; g.lineWidth = 3.2;
+    g.beginPath(); g.moveTo(cx, cy - R + 2); g.quadraticCurveTo(cx + 1, cy - R - 8, cx, cy - R - 9); g.stroke();
+    for(const sx of [-1, 1]){                       // 嫩芽双叶
+      g.beginPath();
+      g.moveTo(cx, cy - R - 7);
+      g.quadraticCurveTo(cx + sx * 11, cy - R - 15, cx + sx * 13, cy - R - 6);
+      g.quadraticCurveTo(cx + sx * 7, cy - R - 1, cx, cy - R - 4);
+      g.closePath(); g.fill();
+    }
+    g.globalCompositeOperation = 'destination-out'; // 五官挖空
+    g.strokeStyle = '#000'; g.lineWidth = 3;
+    for(const sx of [-1, 1]){                       // 弯弯笑眼 ∩
+      g.beginPath(); g.arc(cx + sx * 17, cy - 7, 6.5, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
+    }
+    g.beginPath(); g.arc(cx, cy + 13, 6, Math.PI * 0.18, Math.PI * 0.82); g.stroke();   // 微笑 ∪
+    g.globalCompositeOperation = 'source-over';
+  });
+  // 害羞：兜帽斗篷（波浪下摆）+ 偷瞄单眼 + 腮红
+  TEX.pWuerShy = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    g.beginPath();                                  // 斗篷：圆顶小弯钩 + 两侧垂坠 + 波浪下摆
+    g.moveTo(cx - 29, cy + 26);
+    g.quadraticCurveTo(cx - 26, cy + 34, cx - 18, cy + 27);
+    g.quadraticCurveTo(cx - 9, cy + 36, cx - 1, cy + 28);
+    g.quadraticCurveTo(cx + 8, cy + 36, cx + 17, cy + 27);
+    g.quadraticCurveTo(cx + 25, cy + 34, cx + 29, cy + 25);
+    g.quadraticCurveTo(cx + 37, cy + 2, cx + 13, cy - 25);
+    g.quadraticCurveTo(cx + 9, cy - 38, cx + 0, cy - 37);
+    g.quadraticCurveTo(cx - 5, cy - 32, cx - 9, cy - 25);
+    g.quadraticCurveTo(cx - 35, cy + 0, cx - 29, cy + 26);
+    g.closePath(); g.fill();
+    g.globalCompositeOperation = 'destination-out'; // 五官挖空
+    g.fillStyle = '#000';
+    g.beginPath(); g.arc(cx - 15, cy - 4, 4.2, 0, TAU); g.fill();                          // 偷瞄的眼
+    g.strokeStyle = '#000'; g.lineWidth = 2.8;
+    g.beginPath(); g.arc(cx + 15, cy - 4, 5, Math.PI * 1.1, Math.PI * 1.9); g.stroke();    // 紧闭的眼 ∩
+    for(const sx of [-1, 1]){                                                              // 腮红
+      g.beginPath(); g.ellipse(cx + sx * 21, cy + 7, 4.4, 2.5, 0, 0, TAU); g.fill();
+    }
+    g.lineWidth = 2.4;
+    g.beginPath(); g.arc(cx + 1, cy + 14, 3.4, Math.PI * 0.15, Math.PI * 0.85); g.stroke(); // 小嘴
+    g.globalCompositeOperation = 'source-over';
+  });
+  TEX.pWuer = [TEX.pWuerDark, TEX.pWuerGentle, TEX.pWuerShy];
   TEX.pMini = poly(3, 0.25);
   TEX.pSplitter = poly(5, 0.35);
   // 吾二的「凑凑」文字弹（白色文字，运行时 tint 成弹幕色）
@@ -785,7 +890,8 @@ const state = {
   spawnQueue: [], spawnTimer: 0, flash: 0, hitStop: 0,
   stormCd: 10, meteorCd: 3, particleCap: 900,
   level: 1, xp: 0, xpNeed: 40, pending: 0, cards: [], offer: [], sel: 0, novaFlash: 0,
-  wuerDone: false, stasis: 0, magnetize: 0, pendingSkill: null
+  wuerDone: false, stasis: 0, magnetize: 0, pendingSkill: null,
+  bossBarId: 0, bossBarK: 1, bossChunks: [], bossCutT: 0   // BOSS 血条：当前 BOSS / 上次血量比例 / 坠落碎块 / 断口灼热（死亡细胞式）
 };
 
 const player = {
@@ -2551,7 +2657,7 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     const t = Math.max(1, Math.round(state.wave / 5));
     e.bossTier = t;
     if(t === 2){
-      // 第二只 BOSS：吾二三态随机一体（形状相同，颜色与技能不同）
+      // 第二只 BOSS：吾二三态随机一体（外形、颜色与技能各不相同）
       e.wuerKind = Math.floor(Math.random() * 3);
       e.bossKind = 5 + e.wuerKind;               // >=5 走吾二专用 AI，避开常规分派
       const wk = WUER_KINDS[e.wuerKind];
@@ -4087,8 +4193,8 @@ function syncEnemies(){
     const [halo, rim, body, darkCore, core, hpBg, hpFill] = e.sprites;
     const spawnK = clamp(1 - e.spawnT / (e.type === 'boss' ? 1.25 : 0.45), 0, 1);
     const flash = e.hitFlash > 0;
-    // BOSS 本体/描边/泛光用 4× 高清贴图（单位 168），其他敌人沿用原贴图（单位 42）
-    const bodyTex = e.type === 'boss' ? TEX.pBossBig : TEX[TEX_OF[e.type]];
+    // BOSS 本体/描边/泛光用 4× 高清贴图（单位 168），吾二用专属造型，其他敌人沿用原贴图（单位 42）
+    const bodyTex = e.type === 'boss' ? (e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
     const bodyU = e.type === 'boss' ? 168 : 42;
     // 呼吸：本体半径 3% 脉动，增加活物感
     const sr = e.r * (0.55 + spawnK * 0.45) * (1 + 0.03 * Math.sin(state.time * 4 + e.wob));
@@ -4099,7 +4205,7 @@ function syncEnemies(){
       : e.type === 'weaver' ? state.time * 1.4 + e.wob
       : e.type === 'carrier' ? state.time * 0.35
       : e.type === 'pig' ? state.time * 2.2 + e.wob
-      : e.type === 'boss' ? state.time * (e.enraged ? 1.1 : 0.5)
+      : e.type === 'boss' ? (e.bossKind >= 5 ? Math.sin(state.time * 1.7 + e.wob) * 0.07 : state.time * (e.enraged ? 1.1 : 0.5))   // 吾二有脸，不旋转，只轻摇
       : e.type === 'tank' ? state.time * 0.5 : 0;
 
     // 混合模式：实色层必须走普通混合（参考版是 source-over 实色多边形 + 2px 白描边 +
@@ -4153,17 +4259,18 @@ function syncEnemies(){
     body.tint = mainTint;
     body.alpha = bodyA * 0.85;
 
-    // 暗核：#0a0c14 实心圆，半径 0.42R（参考版为不透明）
+    // 暗核：#0a0c14 实心圆，半径 0.42R（参考版为不透明）；吾二缩小到 0.62× 读作脸部的「核心鼻」
+    const wu = e.bossKind >= 5;
     darkCore.texture = TEX.darkCore;
     darkCore.position.set(e.x, e.y);
-    darkCore.scale.set(sr * 0.84 / 128);
+    darkCore.scale.set(sr * 0.84 * (wu ? 0.62 : 1) / 128);
     darkCore.tint = 0x0a0c14;
     darkCore.alpha = 1;
 
     // 脉动亮核：半径 0.2R，alpha 0.6 + 0.4·sin(t·6 + wob)
     core.texture = TEX.dot;
     core.position.set(e.x, e.y);
-    core.scale.set(sr * 0.4 / 64);
+    core.scale.set(sr * 0.4 * (wu ? 0.7 : 1) / 64);
     core.tint = mainTint;
     core.alpha = 0.6 + 0.4 * Math.sin(state.time * 6 + e.wob);
 
@@ -4225,7 +4332,7 @@ function syncEnemies(){
       const aa = Math.atan2(player.y - e.y, player.x - e.x);
       eye.texture = TEX.chev;
       eye.blendMode = 'add';
-      eye.visible = e.type !== 'mini' && e.spawnT <= 0;
+      eye.visible = e.type !== 'mini' && e.spawnT <= 0 && !(e.bossKind >= 5);   // 吾二有五官，不再叠方向眼珠
       eye.position.set(e.x + Math.cos(aa) * sr * 0.72, e.y + Math.sin(aa) * sr * 0.72);
       eye.rotation = aa + Math.PI / 2;
       eye.scale.set((e.type === 'boss' ? 0.5 : 0.3) * (sr / e.r));
@@ -4257,7 +4364,7 @@ function syncEnemies(){
       eliteRim.alpha = 0.5 + 0.2 * Math.sin(state.time * 5 + e.wob);
     }
 
-    // 吾二隐身（害羞的吾二）：除血条外整体淡出，血条保持可见保证公平
+    // 吾二隐身（害羞的吾二）：整体淡出（BOSS 头顶已无血条，公平性由屏幕上的 BOSS 血条保证）
     if(e.bossKind >= 5 && e.vis !== undefined && e.vis < 0.999){
       for(let si = 0; si < e.sprites.length; si++){
         if(si === 5 || si === 6) continue;   // hpBg / hpFill 不参与隐身淡出
@@ -4267,9 +4374,10 @@ function syncEnemies(){
     }
 
     if(hpBg && hpFill){
-      if(e.hp < e.maxHp){
-        const w = e.type === 'boss' ? e.r * 3.2 : e.r * 2.4;
-        const h = e.type === 'boss' ? 5 : (e.elite ? 4 : 3);
+      // BOSS 头顶不显示血条：屏幕上已有 BOSS 血条（死亡细胞式分段坠落）
+      if(e.hp < e.maxHp && e.type !== 'boss'){
+        const w = e.r * 2.4;
+        const h = e.elite ? 4 : 3;
         hpBg.texture = TEX.bar;
         hpBg.visible = true;
         hpBg.anchor.set(0, 0.5);
@@ -4760,7 +4868,7 @@ function glowText(i, t, color, strength){
   glowAt(i, cx, t.y + fs * 0.55, w * 1.4, fs * 2.0, color, strength);
 }
 
-function drawHUD(){
+function drawHUD(dt){
   const touchHud = uiTouch;
   const pad = touchHud ? 14 : 22;
   const hk = touchHud ? 0.8 : 1;   // 触屏端左上 HUD 整体收窄系数
@@ -5029,7 +5137,7 @@ function drawHUD(){
 
   }
   drawMinimap();
-  drawBossBar();
+  drawBossBar(dt);
 }
 
 function sx0(i){
@@ -5099,24 +5207,57 @@ function drawMinimap(){
   hudG.circle(mx + player.x * sx, my + player.y * sy, 3.4).fill({ color: 0xffffff, alpha: 1 });
 }
 
-function drawBossBar(){
+function drawBossBar(dt){
   const b = enemies.find(e => e.type === 'boss');
-  if(!b){ HT.boss.text = ''; return; }
-  // 触屏端：挪到顶部居中并压扁，避免遮挡底部战斗视野
+  if(!b){ HT.boss.text = ''; state.bossBarId = 0; state.bossChunks.length = 0; return; }
+  dt = dt || 0.016;
+  // 桌面端压底、触屏端置顶压扁，避免遮挡战斗视野
   const bw = uiTouch ? Math.min(300, W * 0.5) : Math.min(470, W * 0.56);
   const bx = W / 2 - bw / 2, by = uiTouch ? 6 : H - 106, bh = uiTouch ? 10 : 22;
   const nameY = uiTouch ? by + bh + 2 : by - 18;
   const k = clamp(b.hp / b.maxHp, 0, 1);
   const barCol = b.enraged ? 0xff5e3d : b.color;
-  // 外框双线 + 底座
-  hudG.roundRect(bx - 4, by - 4, bw + 8, bh + 8, 12).stroke({ width: 1, color: barCol, alpha: 0.3 });
-  hudG.roundRect(bx, by, bw, bh, 9).fill({ color: 0x0a0614, alpha: 0.82 });
-  hudG.roundRect(bx, by, bw * k, bh, 9).fill({ color: barCol, alpha: 0.95 });
+  // 死亡细胞式分段坠落：掉血部分碎成硬边方块，阶梯延迟剥落、受重力坠落消散；换 BOSS 清空
+  if(state.bossBarId !== b.id){ state.bossBarId = b.id; state.bossChunks.length = 0; state.bossCutT = 0; }
+  if(k < state.bossBarK - 1e-4){
+    const lost = state.bossBarK - k;
+    const n = clamp(Math.round(lost * bw / bh), 1, 6);              // 块数随损失量，单块接近正方形
+    for(let i = 0; i < n; i++){
+      state.bossChunks.push({
+        x0: k + lost * i / n, x1: k + lost * (i + 1) / n,
+        y: 0, v: 0, t: -(n - 1 - i) * 0.05,                          // 越靠断口的块越晚剥落，形成下行阶梯
+      });
+    }
+    if(state.bossChunks.length > 18) state.bossChunks.splice(0, state.bossChunks.length - 18);
+    state.bossCutT = 0.3;                                            // 断口灼热计时
+  }
+  state.bossBarK = k;
+  // 外框双线 + 底座（整条直角硬边，对标 demo 的像素断切感）
+  hudG.rect(bx - 4, by - 4, bw + 8, bh + 8).stroke({ width: 1, color: barCol, alpha: 0.3 });
+  hudG.rect(bx, by, bw, bh).fill({ color: 0x0a0614, alpha: 0.82 });
+  hudG.rect(bx, by, bw * k, bh).fill({ color: barCol, alpha: 0.95 });
+  // 坠落碎块（硬边方块：画在主条之后、凹槽之前，剥落瞬间与血条严丝合缝）
+  for(let i = state.bossChunks.length - 1; i >= 0; i--){
+    const c = state.bossChunks[i];
+    c.t += dt;
+    if(c.t > 0){ c.v += 520 * dt; c.y += c.v * dt; }
+    const p = clamp(c.t / 0.7, 0, 1);
+    if(p >= 1){ state.bossChunks.splice(i, 1); continue; }
+    hudG.rect(bx + bw * c.x0, by + c.y, bw * (c.x1 - c.x0) + 0.5, bh)
+      .fill({ color: 0xffffff, alpha: 0.95 * (1 - p) });
+  }
   // 十格凹槽（分段读数）
   for(let i = 1; i < 10; i++){
     hudG.rect(bx + bw * i / 10 - 1, by + 2, 2, bh - 4).fill({ color: 0x0a0614, alpha: 0.85 });
   }
-  hudG.roundRect(bx, by, bw, bh, 9).stroke({ width: 1.5, color: barCol, alpha: 0.85 });
+  hudG.rect(bx, by, bw, bh).stroke({ width: 1.5, color: barCol, alpha: 0.85 });
+  // 断口灼热（画最上层，掉血瞬间断口一道亮白 + 同色光晕）
+  if(state.bossCutT > 0){
+    state.bossCutT -= dt;
+    const ca = clamp(state.bossCutT / 0.3, 0, 1);
+    hudG.rect(bx + bw * k - 1.5, by - 3, 3, bh + 6).fill({ color: 0xffffff, alpha: 0.9 * ca });
+    glowAt(5, bx + bw * k, by + bh / 2, 34, bh + 34, barCol, 0.65 * ca);
+  }
   // 狂怒相位线（50%）
   hudG.moveTo(bx + bw / 2, by - 5).lineTo(bx + bw / 2, by + bh + 5).stroke({ width: 1.5, color: 0xffffff, alpha: 0.35 });
   glowAt(4, bx + bw * k * 0.5, by + bh / 2, bw * k + 60, bh + 18, barCol, 0.18);
@@ -5415,7 +5556,7 @@ const INTRO_SECTIONS = [
   ]},
   { title: 'BOSS 战', color: 0xff3d6e, wide: true, cols: 2, items: [
     { text: '每 5 波一只 BOSS · 越往后体积越大、技能越强', span: true },
-    { text: '第二只是「吾二」—— 黑化 / 温柔 / 害羞 随机一身：形状相同，颜色与技能各不同', span: true, color: 0xffd7f4 },
+    { text: '第二只是「吾二」—— 黑化 / 温柔 / 害羞 随机一身：外形、颜色与技能各不相同', span: true, color: 0xffd7f4 },
     { text: '黑化的吾二', color: 0xc8a8ff, dim: '速度飞快 · 伤害超高 · 黑化冲锋' },
     { text: '温柔的吾二', color: 0xa8ffd0, dim: '速度慢 · 伤害低 · 攻击她会回血' },
     { text: '害羞的吾二', color: 0xffb0d8, dim: '伤害高 · 周期隐身 · 现身弹幕爆发' },
@@ -5839,7 +5980,7 @@ function frame(ticker){
     HS.barHP.visible = HS.barEN.visible = HS.barXP.visible = false;
     if(HS.sweep) HS.sweep.visible = false;
   }
-  if(showHud) drawHUD();
+  if(showHud) drawHUD(dt);
   updateMarkers();
   if(state.mode === 'cards' && CARD_UI.length){
     if(cardUI && cardUI._tGlow) cardUI._tGlow.alpha = 0.09 + 0.05 * Math.sin(state.time * 3);
