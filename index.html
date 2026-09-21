@@ -528,6 +528,48 @@ function buildTextures(){
     g.globalCompositeOperation = 'source-over';
   });
   TEX.pWuer = [TEX.pWuerDark, TEX.pWuerGentle, TEX.pWuerShy];
+  // 喵叶喵（第一只 BOSS）：圆脸猫耳 + 头顶小叶 + 坏笑眼缝 + ω 嘴 + 卷尾 —— 沉默的戳戳怪
+  TEX.pMiaoYe = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2 + 4, R = 29;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
+    for(const sx of [-1, 1]){                       // 猫耳：微弯的尖耳
+      g.beginPath();
+      g.moveTo(cx + sx * 8, cy - R * 0.82);
+      g.quadraticCurveTo(cx + sx * 24, cy - R * 0.98, cx + sx * 22, cy - R * 1.3);
+      g.quadraticCurveTo(cx + sx * 15, cy - R * 0.86, cx + sx * 26, cy - R * 0.44);
+      g.closePath(); g.fill();
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.92)'; g.lineCap = 'round';
+    g.lineWidth = 3;                                // 头顶小叶（她的标志）
+    g.beginPath(); g.moveTo(cx - 2, cy - R * 0.9); g.quadraticCurveTo(cx - 2, cy - R - 7, cx + 2, cy - R - 9); g.stroke();
+    g.beginPath();
+    g.moveTo(cx + 2, cy - R - 8);
+    g.quadraticCurveTo(cx + 13, cy - R - 16, cx + 16, cy - R - 6);
+    g.quadraticCurveTo(cx + 9, cy - R + 1, cx + 2, cy - R - 6);
+    g.closePath(); g.fill();
+    g.lineWidth = 6.5;                              // 卷尾：右下一截弯钩
+    g.beginPath();
+    g.moveTo(cx + R * 0.62, cy + R * 0.72);
+    g.quadraticCurveTo(cx + R * 1.28, cy + R * 0.9, cx + R * 1.16, cy + R * 0.3);
+    g.stroke();
+    g.globalCompositeOperation = 'destination-out'; // 五官挖空
+    g.strokeStyle = '#000'; g.lineCap = 'round';
+    g.lineWidth = 3;
+    for(const sx of [-1, 1]){                       // 眼缝：外端微挑的坏笑
+      g.beginPath();
+      g.moveTo(cx + sx * 12, cy - 6);
+      g.lineTo(cx + sx * 21, cy - 9);
+      g.stroke();
+    }
+    g.lineWidth = 2.6;
+    for(const sx of [-1, 1]){                       // ω 嘴
+      g.beginPath();
+      g.arc(cx + sx * 4, cy + 13, 3.5, Math.PI * 0.15, Math.PI * 0.85);
+      g.stroke();
+    }
+    g.globalCompositeOperation = 'source-over';
+  });
   TEX.pMini = poly(3, 0.25);
   TEX.pSplitter = poly(5, 0.35);
   // 吾二的「凑凑」文字弹（白色文字，运行时 tint 成弹幕色）
@@ -2626,7 +2668,7 @@ const BOSS_KINDS = [
 ];
 
 // ---------------- 第二只 BOSS（wave 10）：吾二三态随机一体 ----------------
-// 形状与常规 BOSS 相同（八边形大体），仅颜色不同；技能完全不同：
+// 三态专属造型与技能（黑化：双角荆棘 / 温柔：垂耳嫩芽 / 害羞：兜帽斗篷）：
 //   黑化的吾二：速度飞快 · 伤害超高（附带黑化冲锋）
 //   温柔的吾二：速度慢 · 伤害低 · 玩家打她会回血（附带温柔乡减速领域）
 //   害羞的吾二：伤害高 · 速度一般 · 周期隐身（现身时弹幕爆发）
@@ -2641,11 +2683,17 @@ const WUER_KINDS = [
 ];
 const WUER_HEAL = 0.15;   // 温柔的吾二：受到伤害的 15% 转为自身治疗
 
+// ---------------- 第一只 BOSS（wave 5）：喵叶喵 —— 沉默的戳戳怪 ----------------
+// 人设：群友，只戳不发言，口头禅「撅」。零弹幕：潜行瞬移到背后戳飞玩家（弹球式击退）；
+// 「撅」是她的撅臀冲撞，撞墙会把自己撞懵（破绽窗口）。
+const MIAOYE = { key:'miaoye', name:'喵叶喵', en:'M I A O Y E', color:0xc4f04a,
+  tip:'她一句话也不说 · 只会从背后戳你', hp:0.85, spd:1.15, dmg:1.0 };
+
 function bossNameOf(e){
-  return e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
+  return e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
 }
 function bossEnOf(e){
-  return e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
+  return e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
 }
 
 function spawnEnemyAt(type, x, y, elite = false, master = null){
@@ -2691,7 +2739,15 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     // 阶级 = BOSS 波序号：体积 / 生命 / 伤害 / 弹幕强度逐阶提升
     const t = Math.max(1, Math.round(state.wave / 5));
     e.bossTier = t;
-    if(t === 2){
+    if(t === 1){
+      // 第一只 BOSS：喵叶喵（沉默的戳戳怪，零弹幕近战刺客）
+      e.bossKind = 8;
+      e.color = MIAOYE.color;
+      e.r = BASE.boss.r * 0.9;
+      e.hp = e.maxHp = Math.round(e.hp * MIAOYE.hp);
+      e.dmg *= MIAOYE.dmg;
+      e.speed *= MIAOYE.spd;
+    } else if(t === 2){
       // 第二只 BOSS：吾二三态随机一体（外形、颜色与技能各不相同）
       e.wuerKind = Math.floor(Math.random() * 3);
       e.bossKind = 5 + e.wuerKind;               // >=5 走吾二专用 AI，避开常规分派
@@ -2710,6 +2766,8 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
       e.speed *= 1 + 0.05 * (t - 1);
     }
     e.blinkCd = 4; e.spiralT = 0; e.chainLeft = 0; e.ringCd = 3;
+    // 喵叶喵专用状态（潜行 / 戳刺 / 撅臀冲撞状态机）
+    e.myState = 'stalk'; e.myT = 0; e.myCd = 2.4; e.myButtCd = 6; e.pokeActive = 0;
     // 吾二专用状态（隐身 / 凑凑弹幕 / 猪猪召唤 / 温柔乡计时器）
     e.vis = 1; e.stealth = 0; e.stealthT = 4;
     e.coucouCd = 4; e.pigCd = 3; e.slowRingCd = 3; e.slowWarn = 0;
@@ -2742,6 +2800,7 @@ function bossEntrance(b){
   const kName = bossNameOf(b);
   addFloat(b.x, b.y - b.r - 30, '!! ' + kName + ' 降临 !!', b.color, 24);
   if(b.wuerKind !== undefined) addFloat(b.x, b.y + b.r + 24, WUER_KINDS[b.wuerKind].tip, 0xffffff, 14);
+  if(b.bossKind === 8) addFloat(b.x, b.y + b.r + 24, MIAOYE.tip, 0xffffff, 14);
   if(cleared > 0) addFloat(b.x, b.y + b.r + 22, '湮灭 ×' + cleared, 0xffd7f4, 15);
   tone(70, 0.7, 'sawtooth', 0.28, 36);
   noiseHit(0.5, 0.2, 300, 0.8);
@@ -3557,6 +3616,20 @@ function updateEnemies(dt){
           if(M.dashSlow > 0){ e.slowT = Math.max(e.slowT || 0, 1); e.slowAmt = Math.max(e.slowAmt || 0, M.dashSlow); }
           if(M.dashRebound > 0) for(let k2 = 0; k2 < M.dashRebound; k2++) addReboundStack(player.x, player.y);
         }
+      } else if(e.bossKind === 8 && e.pokeActive){
+        // 喵叶喵：戳飞 / 撅飞（弹球式强击退，撞墙还能叠反弹）
+        const wasVuln = player.invuln <= 0;
+        hurtPlayer(e.dmg * (e.pokeActive === 2 ? 1.3 : 1.1), e);
+        const kx = (player.x - e.x) / (pd || 1);
+        const ky = (player.y - e.y) / (pd || 1);
+        const pw2 = e.pokeActive === 2 ? 780 : 980;
+        player.vx += kx * pw2; player.vy += ky * pw2;
+        e.kx -= kx * 120; e.ky -= ky * 120;
+        if(wasVuln){
+          addFloat(player.x, player.y - 34, e.pokeActive === 2 ? '被撅飞了！' : '被戳飞了！', 0xc4f04a, 15);
+          tone(600, 0.12, 'square', 0.09, 300);
+        }
+        e.pokeActive = 0;
       } else {
         hurtPlayer(e.dmg, e);
         const kx = (player.x - e.x) / (pd || 1);
@@ -3570,6 +3643,7 @@ function updateEnemies(dt){
 
 // ---------------- BOSS AI（按 bossKind 分派，弹幕规模随 bossTier 增强） ----------------
 function updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  if(e.bossKind === 8){ updateMiaoYe(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind >= 5){ updateWuer(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   const kind = e.bossKind || 0;
   const tier = e.bossTier || 1;
@@ -3886,6 +3960,105 @@ function updateWuer(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
       spawnRing(e.x, e.y, 0xff9ad5, 110, 0.5, 2.5);
       SFX.piggy();
     }
+  }
+}
+
+// ---------------- 喵叶喵 AI（第一只 BOSS：沉默的戳戳怪） ----------------
+// 零弹幕（她不发言）。「戳一戳」：叶隐瞬移到玩家背后 → 亮「！」蓄力 → 短突进戳飞玩家；
+// 「撅」：她唯一会说的话，撅臀高速冲撞，撞墙会把自己撞懵（输出破绽）。
+function updateMiaoYe(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  const bCol = e.color;
+  const pw = 1 + 0.18 * ((e.bossTier || 1) - 1);
+  e.pokeActive = 0;   // 每帧重置，突进相里重新置位
+  switch(e.myState){
+    case 'blink': {   // 叶隐：淡出，瞬移到玩家背后
+      e.myT -= dt * slow;
+      e.vis = Math.max(0.12, e.vis - dt * 5);
+      if(Math.random() < 0.3) spawnParticles(e.x, e.y, 1, bCol, 90, 0.5, 2.2);
+      if(e.myT <= 0){
+        let bx2 = -player.moveDir.x, by2 = -player.moveDir.y;      // 逆着玩家移动方向落点
+        if(Math.hypot(bx2, by2) < 0.2){ const a = rand(0, TAU); bx2 = Math.cos(a); by2 = Math.sin(a); }
+        spawnParticles(e.x, e.y, 14, bCol, 260, 0.5, 2.6);
+        e.x = clamp(player.x + bx2 * 175, e.r + 24, world.w - e.r - 24);
+        e.y = clamp(player.y + by2 * 175, e.r + 24, world.h - e.r - 24);
+        spawnParticles(e.x, e.y, 14, bCol, 260, 0.5, 2.6);
+        e.vis = 1;
+        e.myState = 'wind'; e.myT = 0.32;
+        const dd = Math.hypot(player.x - e.x, player.y - e.y) || 1; // 锁定突进方向（给玩家反应窗口）
+        e.dirX = (player.x - e.x) / dd; e.dirY = (player.y - e.y) / dd;
+        addFloat(e.x, e.y - e.r - 16, '！', 0xffffff, 16);
+        tone(880, 0.08, 'square', 0.06, 660);
+      }
+      return;
+    }
+    case 'wind': {    // 戳前蓄力：原地颤抖
+      e.myT -= dt * slow;
+      e.x += rand(-1, 1) * 0.6; e.y += rand(-1, 1) * 0.6;
+      if(e.myT <= 0){ e.myState = 'poke'; e.myT = 0.26; tone(500, 0.1, 'sawtooth', 0.08, 900); }
+      return;
+    }
+    case 'poke': {    // 戳！高速短突进（命中把玩家当弹球戳飞，见碰撞分支）
+      e.myT -= dt;
+      e.pokeActive = 1;
+      const cs = 1150 * slow;
+      e.x += e.dirX * cs * dt; e.y += e.dirY * cs * dt;
+      spawnParticles(e.x, e.y, 2, bCol, 70, 0.3, 2.2);
+      if(e.myT <= 0){ e.myState = 'stalk'; e.myCd = (e.enraged ? 2.2 : 3.2) / Math.sqrt(pw); }
+      return;
+    }
+    case 'buttTele': {  // 撅！蓄力（冲撞方向在出手瞬间锁定，蓄力期可预判）
+      e.myT -= dt * slow;
+      if(Math.random() < 0.4) spawnParticles(e.x, e.y, 2, bCol, 120, 0.4, 2.4);
+      state.shake = Math.max(state.shake, 1.5);
+      if(e.myT <= 0){
+        const dd = Math.hypot(player.x - e.x, player.y - e.y) || 1;
+        e.dirX = (player.x - e.x) / dd; e.dirY = (player.y - e.y) / dd;
+        e.myState = 'butt'; e.myT = 0.75;
+        SFX.charge(); spawnRing(e.x, e.y, bCol, 90, 0.3, 4);
+      }
+      return;
+    }
+    case 'butt': {    // 撅臀冲撞：高速直线，撞墙把自己撞懵（破绽）
+      e.myT -= dt;
+      e.pokeActive = 2;
+      const cs = 840 * slow;
+      e.x += e.dirX * cs * dt; e.y += e.dirY * cs * dt;
+      spawnParticles(e.x, e.y, 3, bCol, 80, 0.3, 2.4);
+      state.shake = Math.max(state.shake, 3);
+      if(e.x <= e.r + 2 || e.x >= world.w - e.r - 2 || e.y <= e.r + 2 || e.y >= world.h - e.r - 2){
+        e.myState = 'stun'; e.myT = 0.9;
+        state.shake = Math.max(state.shake, 16);
+        spawnRing(e.x, e.y, 0xffffff, 130, 0.4, 3);
+        spawnParticles(e.x, e.y, 22, bCol, 320, 0.6, 3);
+        addFloat(e.x, e.y - e.r - 16, '…', bCol, 15);
+        tone(120, 0.3, 'square', 0.12, 80);
+        return;
+      }
+      if(e.myT <= 0){ e.myState = 'stalk'; e.myButtCd = (e.enraged ? 5.5 : 8) / Math.sqrt(pw); }
+      return;
+    }
+    case 'stun': {    // 撞懵打转：输出窗口
+      e.myT -= dt * slow;
+      if(Math.random() < 0.2) spawnParticles(e.x, e.y, 1, 0xffffff, 60, 0.4, 2);
+      if(e.myT <= 0){ e.myState = 'stalk'; e.myButtCd = (e.enraged ? 5.5 : 8) / Math.sqrt(pw); }
+      return;
+    }
+  }
+  // stalk：沉默环绕保持中距，等待出手（她一句话也不说，零弹幕）
+  const side = (e.id % 2 === 0) ? 1 : -1;
+  const dir = d > 310 ? 1 : (d < 210 ? -0.7 : 0);
+  e.x += (nx * dir + -ny * side * 0.6) * spd * dt;
+  e.y += (ny * dir + nx * side * 0.6) * spd * dt;
+  e.myButtCd -= dt * slow * aggro;
+  e.myCd -= dt * slow * aggro;
+  if(e.myButtCd <= 0 && e.spawnT <= 0 && d > 150){
+    e.myState = 'buttTele'; e.myT = 0.55;
+    addFloat(e.x, e.y - e.r - 16, '撅！', bCol, 18);   // 她唯一会说的话
+    tone(160, 0.25, 'sawtooth', 0.1, 320);
+  } else if(e.myCd <= 0 && e.spawnT <= 0 && d < 560){
+    e.myState = 'blink'; e.myT = 0.35;
+    addFloat(e.x, e.y - e.r - 16, '…', bCol, 14);      // 不说话
+    tone(700, 0.15, 'sine', 0.07, 500);
   }
 }
 
@@ -4232,7 +4405,7 @@ function syncEnemies(){
     const spawnK = clamp(1 - e.spawnT / (e.type === 'boss' ? 1.25 : 0.45), 0, 1);
     const flash = e.hitFlash > 0;
     // BOSS 本体/描边/泛光用 4× 高清贴图（单位 168），吾二用专属造型，其他敌人沿用原贴图（单位 42）
-    const bodyTex = e.type === 'boss' ? (e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
+    const bodyTex = e.type === 'boss' ? (e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
     const bodyU = e.type === 'boss' ? 168 : 42;
     // 呼吸：本体半径 3% 脉动，增加活物感
     const sr = e.r * (0.55 + spawnK * 0.45) * (1 + 0.03 * Math.sin(state.time * 4 + e.wob));
@@ -5624,6 +5797,7 @@ const INTRO_SECTIONS = [
   ]},
   { title: 'BOSS 战', color: 0xff3d6e, wide: true, cols: 2, items: [
     { text: '每 5 波一只 BOSS · 越往后体积越大、技能越强', span: true },
+    { text: '第一只是「喵叶喵」—— 她一句话也不说（零弹幕），只会瞬移到你背后戳飞你 · 小心「撅」', span: true, color: 0xd8ff9a },
     { text: '第二只是「吾二」—— 黑化 / 温柔 / 害羞 随机一身：外形、颜色与技能各不相同', span: true, color: 0xffd7f4 },
     { text: '首次升级是三张传说级祝福：吾二 / 喵雅喵（移速 +5% 换双子吾二）/ 喵斯喵（得分 +10% 换子弹 -10%）', span: true, color: 0xffb08a },
     { text: '黑化的吾二', color: 0xc8a8ff, dim: '速度飞快 · 伤害超高 · 黑化冲锋' },
