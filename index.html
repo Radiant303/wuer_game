@@ -570,6 +570,35 @@ function buildTextures(){
     }
     g.globalCompositeOperation = 'source-over';
   });
+  // 薰衣霓（第四只 BOSS）：圆脸 + 双穗薰衣草（茎上排花苞）+ 睡眼惺忪
+  TEX.pXunYi = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2 + 5, R = 27;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.92)'; g.lineCap = 'round'; g.lineWidth = 3;
+    for(const sx of [-1, 1]){                       // 双穗薰衣草：外扬的茎 + 渐小花苞
+      const x0 = cx + sx * 9, y0 = cy - R * 0.72;
+      const x1 = cx + sx * 22, y1 = cy - R * 1.34;  // 茎尖
+      g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo(cx + sx * 17, cy - R * 1.12, x1, y1); g.stroke();
+      for(let k = 0; k < 5; k++){                   // 花苞沿茎由大到小
+        const t = 0.18 + k * 0.2;
+        const bx2 = (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * (cx + sx * 17) + t * t * x1;
+        const by2 = (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * (cy - R * 1.12) + t * t * y1;
+        g.beginPath(); g.arc(bx2, by2, 3.8 - k * 0.45, 0, TAU); g.fill();
+      }
+    }
+    g.globalCompositeOperation = 'destination-out'; // 五官挖空
+    g.strokeStyle = '#000'; g.lineCap = 'round'; g.lineWidth = 3;
+    for(const sx of [-1, 1]){                       // 睡眼：两条平缝（睡眼惺忪）
+      g.beginPath();
+      g.moveTo(cx + sx * 11, cy - 5);
+      g.lineTo(cx + sx * 20, cy - 5);
+      g.stroke();
+    }
+    g.fillStyle = '#000';
+    g.beginPath(); g.arc(cx, cy + 13, 2.8, 0, TAU); g.fill();   // 圆嘴（打瞌睡）
+    g.globalCompositeOperation = 'source-over';
+  });
   // 枣子（第三只 BOSS）：没有棍的棒棒糖 —— 扇贝边圆糖 + 螺旋纹 + 眼嘴
   TEX.pZizi = bake(96, (g, s) => {
     const cx = s / 2, cy = s / 2, R = 29;
@@ -611,6 +640,14 @@ function buildTextures(){
     g.fillStyle = '#ffffff';
     g.fillText('凑凑', w / 2, h / 2 + 2);
   });
+  // 薰衣霓的表情包：彩色 emoji 文字弹（保原色不 tint，运行时按表情选行为）
+  const EMO_FONT = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+  TEX.eEmoji = ['💜', '😴', '😵‍💫', '💥', '✨', '🎵'].map(ch => bakeWH(48, 48, (g, w, h) => {
+    g.font = '38px ' + EMO_FONT;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(ch, w / 2, h / 2 + 2);
+  }));
   // 猪猪小弟：圆脸 + 双耳 + 猪鼻（挖空），整体白色供运行时 tint
   TEX.pPig = bake(96, (g, s) => {
     const cx = s / 2, cy = s / 2, r = s / 2 - 8;
@@ -2725,11 +2762,16 @@ const MIAOYE = { key:'miaoye', name:'喵叶喵', en:'M I A O Y E', color:0xc4f04
 const ZAOZI = { key:'zizi', name:'枣子ᶜᵒˡˡᵃᵖˢᵃʳ', en:'C O L L A P S A R', color:0xff4d6d,
   tip:'糖豆螺旋 · 枣核引力 · 半血塌缩爆发', hp:1.0, spd:0.9, dmg:1.0 };
 
+// ---------------- 第四只 BOSS（wave 20）：薰衣霓 ----------------
+// 人设：已读不回的网友，只会发表情包。每种 emoji 弹行为各异；「已读不回」期间装死飘走是输出窗口。
+const XUNYI = { key:'xunyi', name:'薰衣霓', en:'X U N Y I N I', color:0xc9a0ff,
+  tip:'已读不回 · 只会发表情包', hp:1.0, spd:0.95, dmg:1.0 };
+
 function bossNameOf(e){
-  return e.bossKind === 9 ? ZAOZI.name : e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
+  return e.bossKind === 10 ? XUNYI.name : e.bossKind === 9 ? ZAOZI.name : e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
 }
 function bossEnOf(e){
-  return e.bossKind === 9 ? ZAOZI.en : e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
+  return e.bossKind === 10 ? XUNYI.en : e.bossKind === 9 ? ZAOZI.en : e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
 }
 
 function spawnEnemyAt(type, x, y, elite = false, master = null){
@@ -2801,6 +2843,14 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
       e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * ZAOZI.hp);
       e.dmg *= 1 + 0.13 * (t - 1);
       e.speed *= (1 + 0.05 * (t - 1)) * ZAOZI.spd;
+    } else if(t === 4){
+      // 第四只 BOSS：薰衣霓（已读不回的网友，表情包弹幕）
+      e.bossKind = 10;
+      e.color = XUNYI.color;
+      e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
+      e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * XUNYI.hp);
+      e.dmg *= 1 + 0.13 * (t - 1);
+      e.speed *= (1 + 0.05 * (t - 1)) * XUNYI.spd;
     } else {
       e.bossKind = (t - 1) % BOSS_KINDS.length;
       e.color = BOSS_KINDS[e.bossKind].color;
@@ -2814,6 +2864,8 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     e.myState = 'stalk'; e.myT = 0; e.myCd = 2.4; e.myButtCd = 6; e.pokeActive = 0;
     // 枣子专用状态（级级超棒层数 / 引力相 / 塌缩）
     e.stacks = 0; e.cheerCd = 4; e.gravState = 0; e.gravT = 0; e.gravCd = 6; e.collapsed = 0; e.gravPow = 900;
+    // 薰衣霓专用状态（表情轰炸 / 已读不回）
+    e.bombCd = 8; e.awayCd = 13; e.awayState = 0; e.awayT = 0;
     // 吾二专用状态（隐身 / 凑凑弹幕 / 猪猪召唤 / 温柔乡计时器）
     e.vis = 1; e.stealth = 0; e.stealthT = 4;
     e.coucouCd = 4; e.pigCd = 3; e.slowRingCd = 3; e.slowWarn = 0;
@@ -2848,6 +2900,7 @@ function bossEntrance(b){
   if(b.wuerKind !== undefined) addFloat(b.x, b.y + b.r + 24, WUER_KINDS[b.wuerKind].tip, 0xffffff, 14);
   if(b.bossKind === 8) addFloat(b.x, b.y + b.r + 24, MIAOYE.tip, 0xffffff, 14);
   if(b.bossKind === 9) addFloat(b.x, b.y + b.r + 24, ZAOZI.tip, 0xffffff, 14);
+  if(b.bossKind === 10) addFloat(b.x, b.y + b.r + 24, XUNYI.tip, 0xffffff, 14);
   if(cleared > 0) addFloat(b.x, b.y + b.r + 22, '湮灭 ×' + cleared, 0xffd7f4, 15);
   tone(70, 0.7, 'sawtooth', 0.28, 36);
   noiseHit(0.5, 0.2, 300, 0.8);
@@ -3468,10 +3521,28 @@ function updateEBullets(dt){
     if(b.y < b.r || b.y > world.h - b.r) b.vy *= -1;
     b.x = clamp(b.x, b.r, world.w - b.r);
     b.y = clamp(b.y, b.r, world.h - b.r);
+    // 薰衣霓的表情行为：软追踪 / 匀速螺旋 /  erratic 摇摆
+    if(b.hom){
+      const ta = Math.atan2(player.y - b.y, player.x - b.x);
+      const ca = Math.atan2(b.vy, b.vx);
+      let da = ta - ca;
+      if(da > Math.PI) da -= TAU; else if(da < -Math.PI) da += TAU;
+      const nv = Math.hypot(b.vx, b.vy);
+      const na = ca + clamp(da, -b.hom * dt, b.hom * dt);
+      b.vx = Math.cos(na) * nv; b.vy = Math.sin(na) * nv;
+    } else if(b.spin){
+      const nv = Math.hypot(b.vx, b.vy), ca = Math.atan2(b.vy, b.vx) + b.spin * dt;
+      b.vx = Math.cos(ca) * nv; b.vy = Math.sin(ca) * nv;
+    } else if(b.wob){
+      b.ph = (b.ph || 0) + dt;
+      const nv = Math.hypot(b.vx, b.vy), ca = Math.atan2(b.vy, b.vx) + Math.sin(b.ph * 8) * b.wob * dt;
+      b.vx = Math.cos(ca) * nv; b.vy = Math.sin(ca) * nv;
+    }
 
     const d = Math.hypot(b.x - player.x, b.y - player.y);
     if(d < player.r + b.r){
       if(b.web) player.webSlow = 1.4;
+      if(b.snooze) player.webSlow = Math.max(player.webSlow, 2.6);   // 😴：命中催眠减速
       if(b.coucou) applyCoucou();
       hurtPlayer(b.dmg);
       spawnParticles(b.x, b.y, 10, 0xff3d6e, 220, 0.45, 3);
@@ -3690,6 +3761,7 @@ function updateEnemies(dt){
 
 // ---------------- BOSS AI（按 bossKind 分派，弹幕规模随 bossTier 增强） ----------------
 function updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  if(e.bossKind === 10){ updateXunYi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 9){ updateZizi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 8){ updateMiaoYe(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind >= 5){ updateWuer(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
@@ -4197,6 +4269,84 @@ function updateZizi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
   }
 }
 
+// ---------------- 薰衣霓 AI（第四只 BOSS：已读不回的网友） ----------------
+// 攻击 = 发表情包：每种 emoji 弹行为各异（💜追踪 / 😴催眠 / 😵‍💫摇摆 / 💥重弹 / ✨速弹 / 🎵螺旋）。
+// 「已读不回」：周期性装死飘走（输出窗口），回归时补一发瞄准弹幕。
+const XY_EMO = [
+  { sp: 150, r: 8,  dmg: 7,  col: 0xff8ad0, hom: 2.2 },            // 💜 爱心：缓慢追踪
+  { sp: 115, r: 12, dmg: 6,  col: 0x9db8ff, snooze: 1 },           // 😴 睡脸：大慢弹，命中催眠
+  { sp: 280, r: 8,  dmg: 8,  col: 0xc9a0ff, wob: 2.8 },            // 😵‍💫 晕： erratic
+  { sp: 165, r: 13, dmg: 12, col: 0xffb04d },                      // 💥 爆：大慢弹高伤
+  { sp: 330, r: 6,  dmg: 6,  col: 0xffe45c },                      // ✨ 闪：快速小弹
+  { sp: 190, r: 7,  dmg: 7,  col: 0x8fe8b0, spin: 2.6 },           // 🎵 音符：螺旋
+];
+function updateXunYi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  const bCol = e.color;
+  const pw = 1 + 0.18 * ((e.bossTier || 1) - 1);
+  const emoji = (k, a) => {
+    const m = XY_EMO[k];
+    mkEBullet({
+      x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
+      vx: Math.cos(a) * m.sp * pw, vy: Math.sin(a) * m.sp * pw,
+      r: m.r, dmg: m.dmg * pw, life: 6.5, color: m.col,
+      emoji: TEX.eEmoji[k], hom: m.hom, wob: m.wob, spin: m.spin, snooze: m.snooze,
+    });
+  };
+  if(e.spawnT > 0){ e.vis = 1; return; }
+  const aim = Math.atan2(dy, dx);
+
+  // ---- 已读不回：装死飘走 3.2s（停火 + 半透明 + 往外漂），回归补 5 连表情 ----
+  if(e.awayState === 1){
+    e.awayT -= dt;
+    e.vis = 0.45;
+    e.x += -nx * spd * 1.5 * dt; e.y += -ny * spd * 1.5 * dt;   // 往外飘
+    if(e.awayT <= 0){
+      e.awayState = 0;
+      e.awayCd = e.enraged ? 10 : 13;
+      addFloat(e.x, e.y - e.r - 20, '已读，但回你 5 个表情', 0xffe45c, 14);
+      for(let k = 0; k < 5; k++) emoji(k % XY_EMO.length, aim + rand(-0.5, 0.5));
+      spawnRing(e.x, e.y, bCol, 120, 0.5, 2.5);
+      tone(660, 0.18, 'square', 0.09, 990);
+    }
+    return;
+  }
+  e.awayCd -= dt * slow;
+  if(e.awayCd <= 0){
+    e.awayState = 1; e.awayT = 3.2;
+    addFloat(e.x, e.y - e.r - 18, '已读不回', bCol, 16);
+    spawnParticles(e.x, e.y, 12, bCol, 200, 0.5, 2.6);
+    tone(300, 0.2, 'sine', 0.07, 180);
+    return;
+  }
+
+  // ---- 常规表情包：扇形 2~3 连发 ----
+  e.shootCd -= dt * slow * aggro;
+  if(e.shootCd <= 0){
+    e.shootCd = (e.enraged ? 1.8 : 2.4) / pw;
+    const n2 = e.enraged ? 3 : 2;
+    for(let k = 0; k < n2; k++){
+      emoji(Math.floor(Math.random() * XY_EMO.length), aim + (k - (n2 - 1) / 2) * 0.22, 0);
+    }
+    tone(440, 0.08, 'square', 0.05, 620);
+  }
+
+  // ---- 表情轰炸：环形 10 连混合表情 ----
+  e.bombCd -= dt * slow * aggro;
+  if(e.bombCd <= 0){
+    e.bombCd = (e.enraged ? 7 : 9.5) / Math.sqrt(pw);
+    addFloat(e.x, e.y - e.r - 22, '表情轰炸！', 0xffe45c, 18);
+    spawnRing(e.x, e.y, bCol, 140, 0.55, 3);
+    for(let k = 0; k < 10; k++) emoji(k % XY_EMO.length, e.wob + k * TAU / 10, 0);
+    tone(520, 0.25, 'square', 0.1, 260);
+  }
+
+  // ---- 移动：中距缓慢巡游（网友很宅，不爱近身） ----
+  const side = (e.id % 2 === 0) ? 1 : -1;
+  const dir = d > 320 ? 1 : (d < 240 ? -0.8 : 0);
+  e.x += (nx * dir + -ny * side * 0.55) * spd * dt;
+  e.y += (ny * dir + nx * side * 0.55) * spd * dt;
+}
+
 // ---------------- 环 / 粒子 ----------------
 function updateRings(dt){
   for(let i = rings.length - 1; i >= 0; i--){
@@ -4540,7 +4690,7 @@ function syncEnemies(){
     const spawnK = clamp(1 - e.spawnT / (e.type === 'boss' ? 1.25 : 0.45), 0, 1);
     const flash = e.hitFlash > 0;
     // BOSS 本体/描边/泛光用 4× 高清贴图（单位 168），吾二用专属造型，其他敌人沿用原贴图（单位 42）
-    const bodyTex = e.type === 'boss' ? (e.bossKind === 9 ? TEX.pZizi : e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
+    const bodyTex = e.type === 'boss' ? (e.bossKind === 10 ? TEX.pXunYi : e.bossKind === 9 ? TEX.pZizi : e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
     const bodyU = e.type === 'boss' ? 168 : 42;
     // 呼吸：本体半径 3% 脉动，增加活物感
     const sr = e.r * (0.55 + spawnK * 0.45) * (1 + 0.03 * Math.sin(state.time * 4 + e.wob));
@@ -4793,6 +4943,22 @@ function syncBullets(){
       g2.scale.set(b.r * 5 / 128);
       g2.tint = b.color;
       g2.alpha = 0.55;
+      b.spr3.visible = false;
+      continue;
+    }
+    if(b.emoji){
+      // 薰衣霓的表情包：彩色 emoji 原色 + 同色外光（隐藏环与白点）
+      const t2 = b.spr2;
+      t2.texture = b.emoji;
+      t2.position.set(b.x, b.y);
+      t2.scale.set(b.r * 2.3 / 48);
+      t2.tint = 0xffffff;
+      t2.alpha = 1;
+      const g2 = b.spr;
+      g2.position.set(b.x, b.y);
+      g2.scale.set(b.r * 5 / 128);
+      g2.tint = b.color;
+      g2.alpha = 0.5;
       b.spr3.visible = false;
       continue;
     }
@@ -5935,6 +6101,7 @@ const INTRO_SECTIONS = [
     { text: '第一只是「喵叶喵」—— 她一句话也不说（零弹幕），只会瞬移到你背后戳飞你 · 小心「撅」', span: true, color: 0xd8ff9a },
     { text: '第二只是「吾二」—— 黑化 / 温柔 / 害羞 随机一身：外形、颜色与技能各不相同', span: true, color: 0xffd7f4 },
     { text: '第三只是「枣子ᶜᵒˡˡᵃᵖˢᵃʳ」—— 棒棒糖塌缩星：糖豆螺旋 · 枣核引力 · 半血塌缩爆发', span: true, color: 0xffb0c0 },
+    { text: '第四只是「薰衣霓」—— 已读不回的网友：每种 emoji 表情弹行为各异 · 她会周期性装死', span: true, color: 0xd8c0ff },
     { text: '首次升级是三张传说级祝福：吾二 / 喵雅喵（移速 +5% 换双子吾二）/ 喵斯喵（得分 +10% 换子弹 -10%）', span: true, color: 0xffb08a },
     { text: '黑化的吾二', color: 0xc8a8ff, dim: '速度飞快 · 伤害超高 · 黑化冲锋' },
     { text: '温柔的吾二', color: 0xa8ffd0, dim: '速度慢 · 伤害低 · 攻击她会回血' },
