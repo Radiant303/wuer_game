@@ -741,7 +741,7 @@ function buildTextures(){
     g.fillStyle = '#ffffff';
     g.fillText(s2, w / 2, h / 2 + 2);
   });
-  TEX.pkt = { p200: pktTex('200', 44), p404: pktTex('404', 40), p429: pktTex('429', 38), p500: pktTex('500', 36), p504: pktTex('504', 40) };
+  TEX.pkt = { p200: pktTex('200', 44), p404: pktTex('404', 40), p429: pktTex('429', 38), p500: pktTex('500', 36) };
   // EterUltimate 的认可 / 否决印章（白色汉字，运行时 tint 成 Green 安全 / Red 危险）
   const markTex = ch => bakeWH(72, 72, (g, w, h) => {
     g.font = 'bold 46px "PingFang SC", "Microsoft YaHei", sans-serif';
@@ -751,8 +751,6 @@ function buildTextures(){
     g.fillText(ch, w / 2, h / 2 + 2);
   });
   TEX.mark = { ke: markTex('可'), bu: markTex('不') };
-  // 金朵儿的花痴爱心（白色 ♡，运行时 tint 粉）
-  TEX.pkt.h = markTex('♡');
   // 金朵儿的金瓣花弹（五瓣花 + 花心，白色供 tint）
   TEX.pPetal = bake(96, (g, s) => {
     const cx = s / 2, cy = s / 2, R = s / 2 - 8;
@@ -1714,7 +1712,7 @@ function addFloat(x, y, text, color = 0xffffff, size = 16){
 }
 
 function spawnRing(x, y, color, maxR, life, width = 3){
-  if(maxR > 140) return;   // 大光圈全部移除
+  if(maxR > 140) maxR = 140;   // 大光圈收敛到上限（超过不再丢弃，保证 BOSS 大招预警环可见）
   const s = POOL.ring.get();
   if(!s) return;
   rings.push({ s, x, y, r: 6, maxR, life, maxLife: life, color, width });
@@ -3717,7 +3715,7 @@ function updateEBullets(dt){
     if(b.flipT > 0) b.flipT -= dt;
 
     const d = Math.hypot(b.x - player.x, b.y - player.y);
-    if(d < player.r + b.r && b.flipT <= 0){
+    if(d < player.r + b.r && !(b.flipT > 0)){   // flipT 仅翻转过渡期设置；普通子弹无此字段，不能用 <= 0 判（undefined <= 0 恒 false）
       if(b.ok){   // 认可球：妈妈的抱抱，无害还回能
         player.energy = Math.min(player.maxEnergy, player.energy + 3);
         addFloat(player.x, player.y - 30, '认可的抱抱 +3', 0x9dffc0, 12);
@@ -3743,7 +3741,7 @@ function updateEBullets(dt){
       if(b.err500){   // 500 Internal Server Error：到期自爆成一圈错误碎片
         for(let k2 = 0; k2 < 6; k2++){
           const a2 = (b.seed || 0) + k2 * TAU / 6;
-          mkEBullet({ x: b.x, y: b.y, vx: Math.cos(a2) * 200, vy: Math.sin(a2) * 200, r: 6, dmg: 7, life: 4, color: b.color });
+          mkEBullet({ x: b.x, y: b.y, vx: Math.cos(a2) * 200, vy: Math.sin(a2) * 200, r: 6, dmg: b.burstDmg || 7, life: 4, color: b.color });
         }
         spawnRing(b.x, b.y, b.color, 80, 0.35, 2);
         tone(160, 0.2, 'sawtooth', 0.08, 90);
@@ -3751,7 +3749,7 @@ function updateEBullets(dt){
       if(b.bloom){   // 金朵儿的花弹：到期绽放成 5 片小瓣
         for(let k2 = 0; k2 < 5; k2++){
           const a2 = (b.seed || 0) + k2 * TAU / 5;
-          mkEBullet({ x: b.x, y: b.y, vx: Math.cos(a2) * 150, vy: Math.sin(a2) * 150, r: 5, dmg: 5, life: 2.6, color: b.color, pkt: TEX.pPetal });
+          mkEBullet({ x: b.x, y: b.y, vx: Math.cos(a2) * 150, vy: Math.sin(a2) * 150, r: 5, dmg: b.bloomDmg || 5, life: 2.6, color: b.color, pkt: TEX.pPetal });
         }
         spawnRing(b.x, b.y, b.color, 40, 0.25, 2);
         spawnParticles(b.x, b.y, 8, b.color, 120, 0.4, 2.2);
@@ -4513,6 +4511,7 @@ function updateXunYi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
     e.x += -nx * spd * 1.5 * dt; e.y += -ny * spd * 1.5 * dt;   // 往外飘
     if(e.awayT <= 0){
       e.awayState = 0;
+      e.vis = 1;   // 装死结束恢复不透明（否则永久 45% 透明）
       e.awayCd = e.enraged ? 10 : 13;
       addFloat(e.x, e.y - e.r - 20, '已读，但回你 5 个表情', 0xffe45c, 14);
       for(let k = 0; k < 5; k++) emoji(k % XY_EMO.length, aim + rand(-0.5, 0.5));
@@ -4590,7 +4589,7 @@ function updateXqm(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
       spawnRing(e.x, e.y, 0xffffff, 150, 0.5, 3);
       for(let k = 0; k < 20; k++){
         const a = e.wob + k * TAU / 20;
-        if(k % 5 === 0) pkt('p500', a, 130, 14, 12, { color: 0xff8a5c, life: 4.5, err500: 1, seed: rand(0, TAU) });
+        if(k % 5 === 0) pkt('p500', a, 130, 14, 12, { color: 0xff8a5c, life: 4.5, err500: 1, seed: rand(0, TAU), burstDmg: 7 * pw });
         else pkt(k % 2 ? 'p200' : 'p404', a, 220, 7, 7, { color: k % 2 ? 0x9dffc0 : 0x8fa3bd, life: k % 2 ? 5 : 1.4 });
       }
       state.shake = 12;
@@ -4629,7 +4628,7 @@ function updateXqm(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
       for(const sgn of [-1, 1]) pkt('p200', aim + sgn * 0.12, 330, 6, 6);
     } else if(V === 1){    // /upload：500 慢车重弹（到期自爆）+ 404
       e.shootCd = 3.2 / Math.sqrt(pw);
-      pkt('p500', aim, 130, 14, 11, { color: 0xff8a5c, life: 4.5, err500: 1, seed: rand(0, TAU) });
+      pkt('p500', aim, 130, 14, 11, { color: 0xff8a5c, life: 4.5, err500: 1, seed: rand(0, TAU), burstDmg: 7 * pw });
       for(const sgn of [-1, 1]) pkt('p404', aim + sgn * 0.3, 250, 7, 6, { color: 0x8fa3bd, life: 1.4 });
     } else {               // /stream：持续小流
       e.shootCd = 0.9 / Math.sqrt(pw);
@@ -4759,7 +4758,7 @@ function updateJuder(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
     mkEBullet(Object.assign({
       x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
       vx: Math.cos(a) * sp * pw, vy: Math.sin(a) * sp * pw,
-      r, dmg: dm * pw, life: 4.2, color: bCol, pkt: TEX.pPetal, bloom, seed: rand(0, TAU),
+      r, dmg: dm * pw, life: 4.2, color: bCol, pkt: TEX.pPetal, bloom, seed: rand(0, TAU), bloomDmg: 5 * pw,
     }, extra || {}));
   };
   if(e.spawnT > 0){ e.vis = 1; return; }
@@ -4779,7 +4778,7 @@ function updateJuder(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
       mkEBullet({
         x: rand(40, world.w - 40), y: 30,
         vx: rand(-30, 30), vy: rand(120, 170) * pw,
-        r: 7, dmg: 6 * pw, life: 6, color: bCol, pkt: TEX.pPetal, bloom: 2, wob: 1.4,
+        r: 7, dmg: 6 * pw, life: 6, color: bCol, pkt: TEX.pPetal, bloom: 2, wob: 1.4, bloomDmg: 5 * pw,
       });
     }
   }
