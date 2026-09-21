@@ -2883,11 +2883,11 @@ const XUNYI = { key:'xunyi', name:'薰衣霓', en:'X U N Y I N I', color:0xc9a0f
   tip:'已读不回 · 只会发表情包', hp:1.0, spd:0.95, dmg:1.0 };
 
 // ---------------- 第五只 BOSS（wave 25）：喵17qxm喵 ----------------
-// 人设：接口猫，口头禅「newapi」。技能全是 HTTP 梗：状态码请求弹（200/404/429/500/504），
-// newapi 切换接口版本，429 命中限流玩家射速，半血 504 网关超时（全场卡顿后缓存雪崩）。
+// 人设：接口猫，口头禅「oneapi」。技能全是 HTTP 梗：状态码请求弹（200/404/429/500/504），
+// oneapi 切换接口版本，429 命中限流玩家射速，半血 504 网关超时（全场卡顿后缓存雪崩）。
 const XQM = { key:'xqm', name:'喵17qxm喵', en:'1 7 Q X M', color:0x7dff5c,
-  tip:'newapi · 429 限流 · 504 超时', hp:1.05, spd:0.9, dmg:1.0 };
-const XQM_VERS = ['/ping', '/upload', '/stream'];   // newapi 轮换的接口版本
+  tip:'oneapi · 429 限流 · 504 超时', hp:1.05, spd:0.9, dmg:1.0 };
+const XQM_VERS = ['/ping', '/upload', '/stream'];   // oneapi 轮换的接口版本
 
 // ---------------- 第六只 BOSS（wave 30）：EterUltimate ----------------
 // 人设：白金天使猫，口头禅「可以的妈妈」。她的弹幕是「可 / 不」印章：
@@ -2988,7 +2988,7 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
       e.dmg *= 1 + 0.13 * (t - 1);
       e.speed *= (1 + 0.05 * (t - 1)) * XUNYI.spd;
     } else if(t === 5){
-      // 第五只 BOSS：喵17qxm喵（接口猫，状态码请求弹 + newapi 版本切换）
+      // 第五只 BOSS：喵17qxm喵（接口猫，状态码请求弹 + oneapi 版本切换）
       e.bossKind = 11;
       e.color = XQM.color;
       e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
@@ -3026,7 +3026,7 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     e.stacks = 0; e.cheerCd = 4; e.gravState = 0; e.gravT = 0; e.gravCd = 6; e.collapsed = 0; e.gravPow = 900;
     // 薰衣霓专用状态（表情轰炸 / 已读不回）
     e.bombCd = 8; e.awayCd = 13; e.awayState = 0; e.awayT = 0;
-    // 喵17qxm喵专用状态（接口版本 / newapi / 429 / 504 超时）
+    // 喵17qxm喵专用状态（接口版本 / oneapi / 429 / 504 超时）
     e.apiVer = 0; e.apiCd = 6; e.rlCd = 8; e.timeoutT = 0; e.timedOut = 0;
     // EterUltimate 专用状态（口头禅翻转 / ULTIMATE 双阶段）
     e.flipCd = 11; e.ult1 = 0; e.ult2 = 0; e.ultPhase = 0; e.ultT = 0; e.ultSpiral = 0; e.ultRingT = 0;
@@ -4558,7 +4558,7 @@ function updateXunYi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
 }
 
 // ---------------- 喵17qxm喵 AI（第五只 BOSS：接口猫） ----------------
-// 口头禅「newapi」：周期性切换接口版本（/ping 快弹 · /upload 重弹 · /stream 持续流）；
+// 口头禅「oneapi」：周期性切换接口版本（/ping 快弹 · /upload 重弹 · /stream 持续流）；
 // 429 限流弹命中让玩家射速减半；半血 504 网关超时（全场卡顿）后缓存雪崩。
 function updateXqm(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
   const bCol = e.color;
@@ -4598,12 +4598,12 @@ function updateXqm(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
     return;   // 超时期间挂机（stasis 期间全场一起卡）
   }
 
-  // ---- newapi：口头禅，周期性切换接口版本 ----
+  // ---- oneapi：口头禅，周期性切换接口版本 ----
   e.apiCd -= dt * slow;
   if(e.apiCd <= 0 && e.spawnT <= 0){
     e.apiCd = e.enraged ? 11 : 14;
     e.apiVer = (e.apiVer + 1) % 3;
-    addFloat(e.x, e.y - e.r - 28, 'newapi！', 0xffe45c, 22);
+    addFloat(e.x, e.y - e.r - 28, 'oneapi！', 0xffe45c, 22);
     addFloat(e.x, e.y - e.r - 10, XQM_VERS[e.apiVer] + ' 上线', 0x9dffc0, 13);
     spawnRing(e.x, e.y, 0xffe45c, 120, 0.5, 2.5);
     spawnParticles(e.x, e.y, 16, 0xffe45c, 260, 0.5, 2.6);
@@ -6590,7 +6590,7 @@ const INTRO_SECTIONS = [
     { text: '第二只是「吾二」—— 黑化 / 温柔 / 害羞 随机一身：外形、颜色与技能各不相同', span: true, color: 0xffd7f4 },
     { text: '第三只是「枣子ᶜᵒˡˡᵃᵖˢᵃʳ」—— 棒棒糖塌缩星：糖豆螺旋 · 枣核引力 · 半血塌缩爆发', span: true, color: 0xffb0c0 },
     { text: '第四只是「薰衣霓」—— 已读不回的网友：每种 emoji 表情弹行为各异 · 她会周期性装死', span: true, color: 0xd8c0ff },
-    { text: '第五只是「喵17qxm喵」—— 接口猫：口头禅 newapi · 429 限流射速 · 504 全场超时', span: true, color: 0xb8ff9a },
+    { text: '第五只是「喵17qxm喵」—— 接口猫：口头禅 oneapi · 429 限流射速 · 504 全场超时', span: true, color: 0xb8ff9a },
     { text: '第六只是「EterUltimate」—— 口头禅「可以的妈妈」：认可印章回能 · 否决印章伤人 · 双阶段 ULTIMATE', span: true, color: 0xffe9b8 },
     { text: '第七只是「金朵儿」—— 口头禅「好可爱的soulter」：花弹会绽放 · 她花痴时站着挨打', span: true, color: 0xffd9a0 },
     { text: '首次升级是三张传说级祝福：吾二 / 喵雅喵（移速 +5% 换双子吾二）/ 喵斯喵（得分 +10% 换子弹 -10%）', span: true, color: 0xffb08a },
