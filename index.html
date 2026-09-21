@@ -599,6 +599,38 @@ function buildTextures(){
     g.beginPath(); g.arc(cx, cy + 13, 2.8, 0, TAU); g.fill();   // 圆嘴（打瞌睡）
     g.globalCompositeOperation = 'source-over';
   });
+  // 喵17qxm喵（第五只 BOSS）：接口猫圆脸 + 猫耳 + 信号天线 + 自信坏笑
+  TEX.pXqm = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2 + 5, R = 28;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
+    for(const sx of [-1, 1]){                       // 猫耳
+      g.beginPath();
+      g.moveTo(cx + sx * 9, cy - R * 0.8);
+      g.quadraticCurveTo(cx + sx * 22, cy - R * 1.0, cx + sx * 21, cy - R * 1.28);
+      g.quadraticCurveTo(cx + sx * 15, cy - R * 0.88, cx + sx * 27, cy - R * 0.5);
+      g.closePath(); g.fill();
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.92)'; g.lineCap = 'round';
+    g.lineWidth = 2.5;                              // 信号天线
+    g.beginPath(); g.moveTo(cx, cy - R * 0.9); g.lineTo(cx, cy - R - 9); g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    g.beginPath(); g.arc(cx, cy - R - 12, 3.5, 0, TAU); g.fill();
+    g.lineWidth = 2;
+    for(const sx of [-1, 1]){                       // 信号弧
+      g.beginPath(); g.arc(cx, cy - R - 12, 6.5, sx > 0 ? -0.9 : Math.PI - 0.9, sx > 0 ? -0.1 : Math.PI - 0.1); g.stroke();
+    }
+    g.globalCompositeOperation = 'destination-out'; // 五官挖空
+    g.strokeStyle = '#000'; g.lineCap = 'round'; g.lineWidth = 3;
+    for(const sx of [-1, 1]){                       // 自信挑眉（外端上扬）
+      g.beginPath();
+      g.moveTo(cx + sx * 10, cy - 6);
+      g.lineTo(cx + sx * 19, cy - 9);
+      g.stroke();
+    }
+    g.beginPath(); g.arc(cx + 2, cy + 12, 5, Math.PI * 0.2, Math.PI * 0.8); g.stroke();   // 歪嘴笑
+    g.globalCompositeOperation = 'source-over';
+  });
   // 枣子（第三只 BOSS）：没有棍的棒棒糖 —— 扇贝边圆糖 + 螺旋纹 + 眼嘴
   TEX.pZizi = bake(96, (g, s) => {
     const cx = s / 2, cy = s / 2, R = 29;
@@ -648,6 +680,15 @@ function buildTextures(){
     g.textBaseline = 'middle';
     g.fillText(ch, w / 2, h / 2 + 2);
   }));
+  // 喵17qxm喵的状态码请求弹（白色 Courier 粗体，运行时 tint 成各码颜色）
+  const pktTex = (s2, fs) => bakeWH(160, 72, (g, w, h) => {
+    g.font = 'bold ' + fs + 'px "Courier New", monospace';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#ffffff';
+    g.fillText(s2, w / 2, h / 2 + 2);
+  });
+  TEX.pkt = { p200: pktTex('200', 44), p404: pktTex('404', 40), p429: pktTex('429', 38), p500: pktTex('500', 36), p504: pktTex('504', 40) };
   // 猪猪小弟：圆脸 + 双耳 + 猪鼻（挖空），整体白色供运行时 tint
   TEX.pPig = bake(96, (g, s) => {
     const cx = s / 2, cy = s / 2, r = s / 2 - 8;
@@ -1011,7 +1052,7 @@ const player = {
   charges: 1, dashHits: null, dashGuardT: 0, ramMul: 0, orbitT: 0, orbitDmg: 0, orbitTick: 0,
   overload: 0, hitFlash: 0, shield: 0, rebound: 0, reboundT: 0,
   power: 0, powerType: null, powerMax: 9,
-  blessDmg: 0, blessShot: 0, frenzy: 0, webSlow: 0, coucouT: 0,
+  blessDmg: 0, blessShot: 0, frenzy: 0, webSlow: 0, coucouT: 0, rlT: 0,
   actives: [],
   shotN: 0, reviveUsed: 0, trail: [], moveDir: { x: 0, y: 0 }
 };
@@ -2418,7 +2459,7 @@ function startGame(){
   player.shield = 0; player.rebound = 0; player.reboundT = 0;
   player.shotN = 0; player.reviveUsed = 0;
   player.blessDmg = 0; player.blessShot = 0;
-  player.frenzy = 0; player.webSlow = 0; player.coucouT = 0; player.actives.length = 0;
+  player.frenzy = 0; player.webSlow = 0; player.coucouT = 0; player.rlT = 0; player.actives.length = 0;
   player.angle = -Math.PI / 2;
   player.trail.length = 0;
 
@@ -2767,11 +2808,18 @@ const ZAOZI = { key:'zizi', name:'枣子ᶜᵒˡˡᵃᵖˢᵃʳ', en:'C O L L A 
 const XUNYI = { key:'xunyi', name:'薰衣霓', en:'X U N Y I N I', color:0xc9a0ff,
   tip:'已读不回 · 只会发表情包', hp:1.0, spd:0.95, dmg:1.0 };
 
+// ---------------- 第五只 BOSS（wave 25）：喵17qxm喵 ----------------
+// 人设：接口猫，口头禅「newapi」。技能全是 HTTP 梗：状态码请求弹（200/404/429/500/504），
+// newapi 切换接口版本，429 命中限流玩家射速，半血 504 网关超时（全场卡顿后缓存雪崩）。
+const XQM = { key:'xqm', name:'喵17qxm喵', en:'1 7 Q X M', color:0x7dff5c,
+  tip:'newapi · 429 限流 · 504 超时', hp:1.05, spd:0.9, dmg:1.0 };
+const XQM_VERS = ['/ping', '/upload', '/stream'];   // newapi 轮换的接口版本
+
 function bossNameOf(e){
-  return e.bossKind === 10 ? XUNYI.name : e.bossKind === 9 ? ZAOZI.name : e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
+  return e.bossKind === 11 ? XQM.name : e.bossKind === 10 ? XUNYI.name : e.bossKind === 9 ? ZAOZI.name : e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
 }
 function bossEnOf(e){
-  return e.bossKind === 10 ? XUNYI.en : e.bossKind === 9 ? ZAOZI.en : e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
+  return e.bossKind === 11 ? XQM.en : e.bossKind === 10 ? XUNYI.en : e.bossKind === 9 ? ZAOZI.en : e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
 }
 
 function spawnEnemyAt(type, x, y, elite = false, master = null){
@@ -2851,6 +2899,14 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
       e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * XUNYI.hp);
       e.dmg *= 1 + 0.13 * (t - 1);
       e.speed *= (1 + 0.05 * (t - 1)) * XUNYI.spd;
+    } else if(t === 5){
+      // 第五只 BOSS：喵17qxm喵（接口猫，状态码请求弹 + newapi 版本切换）
+      e.bossKind = 11;
+      e.color = XQM.color;
+      e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
+      e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * XQM.hp);
+      e.dmg *= 1 + 0.13 * (t - 1);
+      e.speed *= (1 + 0.05 * (t - 1)) * XQM.spd;
     } else {
       e.bossKind = (t - 1) % BOSS_KINDS.length;
       e.color = BOSS_KINDS[e.bossKind].color;
@@ -2866,6 +2922,8 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     e.stacks = 0; e.cheerCd = 4; e.gravState = 0; e.gravT = 0; e.gravCd = 6; e.collapsed = 0; e.gravPow = 900;
     // 薰衣霓专用状态（表情轰炸 / 已读不回）
     e.bombCd = 8; e.awayCd = 13; e.awayState = 0; e.awayT = 0;
+    // 喵17qxm喵专用状态（接口版本 / newapi / 429 / 504 超时）
+    e.apiVer = 0; e.apiCd = 6; e.rlCd = 8; e.timeoutT = 0; e.timedOut = 0;
     // 吾二专用状态（隐身 / 凑凑弹幕 / 猪猪召唤 / 温柔乡计时器）
     e.vis = 1; e.stealth = 0; e.stealthT = 4;
     e.coucouCd = 4; e.pigCd = 3; e.slowRingCd = 3; e.slowWarn = 0;
@@ -2901,6 +2959,7 @@ function bossEntrance(b){
   if(b.bossKind === 8) addFloat(b.x, b.y + b.r + 24, MIAOYE.tip, 0xffffff, 14);
   if(b.bossKind === 9) addFloat(b.x, b.y + b.r + 24, ZAOZI.tip, 0xffffff, 14);
   if(b.bossKind === 10) addFloat(b.x, b.y + b.r + 24, XUNYI.tip, 0xffffff, 14);
+  if(b.bossKind === 11) addFloat(b.x, b.y + b.r + 24, XQM.tip, 0xffffff, 14);
   if(cleared > 0) addFloat(b.x, b.y + b.r + 22, '湮灭 ×' + cleared, 0xffd7f4, 15);
   tone(70, 0.7, 'sawtooth', 0.28, 36);
   noiseHit(0.5, 0.2, 300, 0.8);
@@ -3208,6 +3267,7 @@ function tryFire(){
   const cou = p.coucouT > 0;   // 凑凑弹幕：射速-90% · 伤害+150%
   let rate = CFG.fireRate * M.rate;
   if(cou) rate *= 10;
+  if(p.rlT > 0) rate *= 2;   // 429 Too Many Requests：射速减半
   if(pow === 'rapid') rate *= 0.55;
   if(fren) rate *= 0.625;
   p.fireCd = Math.max(0.03, rate);
@@ -3314,6 +3374,7 @@ function updatePlayer(dt){
   p.blessShot = Math.max(0, p.blessShot - dt);
   p.frenzy = Math.max(0, p.frenzy - dt);
   p.webSlow = Math.max(0, p.webSlow - dt);
+  p.rlT = Math.max(0, p.rlT - dt);   // 429 限流计时
   p.coucouT = Math.max(0, p.coucouT - dt);
   for(const s of p.actives) s.cd = Math.max(0, s.cd - dt);
 
@@ -3543,13 +3604,28 @@ function updateEBullets(dt){
     if(d < player.r + b.r){
       if(b.web) player.webSlow = 1.4;
       if(b.snooze) player.webSlow = Math.max(player.webSlow, 2.6);   // 😴：命中催眠减速
+      if(b.rl){                                                    // 429：请求被限流，射速减半
+        player.rlT = Math.max(player.rlT, 3.5);
+        addFloat(player.x, player.y - 34, '429：请求被限流', 0xffe45c, 14);
+        tone(300, 0.2, 'square', 0.09, 160);
+      }
       if(b.coucou) applyCoucou();
       hurtPlayer(b.dmg);
       spawnParticles(b.x, b.y, 10, 0xff3d6e, 220, 0.45, 3);
       freeEBullet(b); ebullets.splice(i, 1);
       continue;
     }
-    if(b.life <= 0){ freeEBullet(b); ebullets.splice(i, 1); }
+    if(b.life <= 0){
+      if(b.err500){   // 500 Internal Server Error：到期自爆成一圈错误碎片
+        for(let k2 = 0; k2 < 6; k2++){
+          const a2 = (b.seed || 0) + k2 * TAU / 6;
+          mkEBullet({ x: b.x, y: b.y, vx: Math.cos(a2) * 200, vy: Math.sin(a2) * 200, r: 6, dmg: 7, life: 4, color: b.color });
+        }
+        spawnRing(b.x, b.y, b.color, 80, 0.35, 2);
+        tone(160, 0.2, 'sawtooth', 0.08, 90);
+      }
+      freeEBullet(b); ebullets.splice(i, 1);
+    }
   }
   if(ebullets.length > 240){
     freeEBullet(ebullets[0]);
@@ -3761,6 +3837,7 @@ function updateEnemies(dt){
 
 // ---------------- BOSS AI（按 bossKind 分派，弹幕规模随 bossTier 增强） ----------------
 function updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  if(e.bossKind === 11){ updateXqm(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 10){ updateXunYi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 9){ updateZizi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 8){ updateMiaoYe(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
@@ -4347,6 +4424,94 @@ function updateXunYi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
   e.y += (ny * dir + nx * side * 0.55) * spd * dt;
 }
 
+// ---------------- 喵17qxm喵 AI（第五只 BOSS：接口猫） ----------------
+// 口头禅「newapi」：周期性切换接口版本（/ping 快弹 · /upload 重弹 · /stream 持续流）；
+// 429 限流弹命中让玩家射速减半；半血 504 网关超时（全场卡顿）后缓存雪崩。
+function updateXqm(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  const bCol = e.color;
+  const pw = 1 + 0.18 * ((e.bossTier || 1) - 1);
+  const aim = Math.atan2(dy, dx);
+  const pkt = (k, a, sp, r, dm, extra) => {
+    mkEBullet(Object.assign({
+      x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
+      vx: Math.cos(a) * sp * pw, vy: Math.sin(a) * sp * pw,
+      r, dmg: dm * pw, life: 6.5, color: 0x9dffc0,
+    }, extra || {}, { pkt: TEX.pkt[k] }));
+  };
+  if(e.spawnT > 0){ e.vis = 1; return; }
+
+  // ---- 504 网关超时（半血一次）：全场卡顿 2.2s（stasis）→ 缓存雪崩 20 连 ----
+  if(!e.timedOut && e.hp <= e.maxHp * 0.5){
+    e.timedOut = 1; e.timeoutT = 2.2;
+    state.stasis = Math.max(state.stasis, 2.2);
+    addFloat(e.x, e.y - e.r - 26, '504 网关超时…', 0xff8a5c, 20);
+    state.shake = 10; state.hitStop = Math.max(state.hitStop, 0.15);
+    spawnRing(e.x, e.y, 0xff8a5c, 150, 0.6, 3);
+    tone(70, 0.6, 'sawtooth', 0.14, 120);
+  }
+  if(e.timeoutT > 0){
+    e.timeoutT -= dt;
+    if(e.timeoutT <= 0){
+      addFloat(e.x, e.y - e.r - 26, '缓存雪崩！', 0xffffff, 22);
+      spawnRing(e.x, e.y, 0xffffff, 150, 0.5, 3);
+      for(let k = 0; k < 20; k++){
+        const a = e.wob + k * TAU / 20;
+        if(k % 5 === 0) pkt('p500', a, 130, 14, 12, { color: 0xff8a5c, life: 4.5, err500: 1, seed: rand(0, TAU) });
+        else pkt(k % 2 ? 'p200' : 'p404', a, 220, 7, 7, { color: k % 2 ? 0x9dffc0 : 0x8fa3bd, life: k % 2 ? 5 : 1.4 });
+      }
+      state.shake = 12;
+      tone(90, 0.5, 'sawtooth', 0.14, 60);
+    }
+    return;   // 超时期间挂机（stasis 期间全场一起卡）
+  }
+
+  // ---- newapi：口头禅，周期性切换接口版本 ----
+  e.apiCd -= dt * slow;
+  if(e.apiCd <= 0 && e.spawnT <= 0){
+    e.apiCd = e.enraged ? 11 : 14;
+    e.apiVer = (e.apiVer + 1) % 3;
+    addFloat(e.x, e.y - e.r - 28, 'newapi！', 0xffe45c, 22);
+    addFloat(e.x, e.y - e.r - 10, XQM_VERS[e.apiVer] + ' 上线', 0x9dffc0, 13);
+    spawnRing(e.x, e.y, 0xffe45c, 120, 0.5, 2.5);
+    spawnParticles(e.x, e.y, 16, 0xffe45c, 260, 0.5, 2.6);
+    tone(880, 0.2, 'square', 0.09, 1320);
+  }
+
+  // ---- 429 Too Many Requests：周期限流弹（命中射速减半 3.5s） ----
+  e.rlCd -= dt * slow * aggro;
+  if(e.rlCd <= 0 && e.spawnT <= 0){
+    e.rlCd = e.enraged ? 7 : 9.5;
+    pkt('p429', aim, 240, 9, 8, { rl: 1, color: 0xffe45c, life: 5 });
+    addFloat(e.x, e.y - e.r - 18, '429 Too Many Requests', 0xffe45c, 13);
+    tone(520, 0.15, 'square', 0.08, 300);
+  }
+
+  // ---- 常规请求（按接口版本） ----
+  e.shootCd -= dt * slow * aggro;
+  if(e.shootCd <= 0 && e.spawnT <= 0){
+    const V = e.apiVer;
+    if(V === 0){           // /ping：200 快弹双发
+      e.shootCd = 2.2 / Math.sqrt(pw);
+      for(const sgn of [-1, 1]) pkt('p200', aim + sgn * 0.12, 330, 6, 6);
+    } else if(V === 1){    // /upload：500 慢车重弹（到期自爆）+ 404
+      e.shootCd = 3.2 / Math.sqrt(pw);
+      pkt('p500', aim, 130, 14, 11, { color: 0xff8a5c, life: 4.5, err500: 1, seed: rand(0, TAU) });
+      for(const sgn of [-1, 1]) pkt('p404', aim + sgn * 0.3, 250, 7, 6, { color: 0x8fa3bd, life: 1.4 });
+    } else {               // /stream：持续小流
+      e.shootCd = 0.9 / Math.sqrt(pw);
+      pkt('p200', aim + rand(-0.15, 0.15), 300, 5, 5);
+      if(Math.random() < 0.25) pkt('p404', aim + rand(-0.4, 0.4), 260, 7, 6, { color: 0x8fa3bd, life: 1.4 });
+    }
+    tone(240, 0.07, 'square', 0.05, 360);
+  }
+
+  // ---- 移动：中距巡航（接口猫不爱近身） ----
+  const side = (e.id % 2 === 0) ? 1 : -1;
+  const dir = d > 320 ? 1 : (d < 240 ? -0.8 : 0);
+  e.x += (nx * dir + -ny * side * 0.5) * spd * dt;
+  e.y += (ny * dir + nx * side * 0.5) * spd * dt;
+}
+
 // ---------------- 环 / 粒子 ----------------
 function updateRings(dt){
   for(let i = rings.length - 1; i >= 0; i--){
@@ -4690,7 +4855,7 @@ function syncEnemies(){
     const spawnK = clamp(1 - e.spawnT / (e.type === 'boss' ? 1.25 : 0.45), 0, 1);
     const flash = e.hitFlash > 0;
     // BOSS 本体/描边/泛光用 4× 高清贴图（单位 168），吾二用专属造型，其他敌人沿用原贴图（单位 42）
-    const bodyTex = e.type === 'boss' ? (e.bossKind === 10 ? TEX.pXunYi : e.bossKind === 9 ? TEX.pZizi : e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
+    const bodyTex = e.type === 'boss' ? (e.bossKind === 11 ? TEX.pXqm : e.bossKind === 10 ? TEX.pXunYi : e.bossKind === 9 ? TEX.pZizi : e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
     const bodyU = e.type === 'boss' ? 168 : 42;
     // 呼吸：本体半径 3% 脉动，增加活物感
     const sr = e.r * (0.55 + spawnK * 0.45) * (1 + 0.03 * Math.sin(state.time * 4 + e.wob));
@@ -4954,6 +5119,22 @@ function syncBullets(){
       t2.scale.set(b.r * 2.3 / 48);
       t2.tint = 0xffffff;
       t2.alpha = 1;
+      const g2 = b.spr;
+      g2.position.set(b.x, b.y);
+      g2.scale.set(b.r * 5 / 128);
+      g2.tint = b.color;
+      g2.alpha = 0.5;
+      b.spr3.visible = false;
+      continue;
+    }
+    if(b.pkt){
+      // 喵17qxm喵的状态码请求弹：白色 Courier 文本 + 同色外光（隐藏环与白点）
+      const t2 = b.spr2;
+      t2.texture = b.pkt;
+      t2.position.set(b.x, b.y);
+      t2.scale.set(b.r * 1.7 / 72);
+      t2.tint = b.color;
+      t2.alpha = 0.95;
       const g2 = b.spr;
       g2.position.set(b.x, b.y);
       g2.scale.set(b.r * 5 / 128);
@@ -6102,6 +6283,7 @@ const INTRO_SECTIONS = [
     { text: '第二只是「吾二」—— 黑化 / 温柔 / 害羞 随机一身：外形、颜色与技能各不相同', span: true, color: 0xffd7f4 },
     { text: '第三只是「枣子ᶜᵒˡˡᵃᵖˢᵃʳ」—— 棒棒糖塌缩星：糖豆螺旋 · 枣核引力 · 半血塌缩爆发', span: true, color: 0xffb0c0 },
     { text: '第四只是「薰衣霓」—— 已读不回的网友：每种 emoji 表情弹行为各异 · 她会周期性装死', span: true, color: 0xd8c0ff },
+    { text: '第五只是「喵17qxm喵」—— 接口猫：口头禅 newapi · 429 限流射速 · 504 全场超时', span: true, color: 0xb8ff9a },
     { text: '首次升级是三张传说级祝福：吾二 / 喵雅喵（移速 +5% 换双子吾二）/ 喵斯喵（得分 +10% 换子弹 -10%）', span: true, color: 0xffb08a },
     { text: '黑化的吾二', color: 0xc8a8ff, dim: '速度飞快 · 伤害超高 · 黑化冲锋' },
     { text: '温柔的吾二', color: 0xa8ffd0, dim: '速度慢 · 伤害低 · 攻击她会回血' },
