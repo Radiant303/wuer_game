@@ -570,6 +570,37 @@ function buildTextures(){
     }
     g.globalCompositeOperation = 'source-over';
   });
+  // 枣子（第三只 BOSS）：没有棍的棒棒糖 —— 扇贝边圆糖 + 螺旋纹 + 眼嘴
+  TEX.pZizi = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2, R = 29;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    g.beginPath();                                  // 扇贝边圆糖
+    const N = 16;
+    for(let i = 0; i <= N; i++){
+      const a = i * TAU / N;
+      const rr = R + (i % 2 ? 0.5 : 4.5);
+      const px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr;
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.closePath(); g.fill();
+    g.globalCompositeOperation = 'destination-out'; // 螺旋纹（2.2 圈，从糖心卷到边）
+    g.strokeStyle = '#000'; g.lineCap = 'round'; g.lineWidth = 5;
+    g.beginPath();
+    for(let t = 0; t <= 1; t += 0.02){
+      const a = t * TAU * 2.2 - Math.PI / 2;
+      const rr = 2 + t * 24;
+      const px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr;
+      t ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.stroke();
+    g.fillStyle = '#000';
+    for(const sx of [-1, 1]){                       // 圆点眼
+      g.beginPath(); g.arc(cx + sx * 16, cy - 8, 3.4, 0, TAU); g.fill();
+    }
+    g.lineWidth = 2.6;
+    g.beginPath(); g.arc(cx + 1, cy + 16, 4.2, Math.PI * 0.15, Math.PI * 0.85); g.stroke();  // 笑
+    g.globalCompositeOperation = 'source-over';
+  });
   TEX.pMini = poly(3, 0.25);
   TEX.pSplitter = poly(5, 0.35);
   // 吾二的「凑凑」文字弹（白色文字，运行时 tint 成弹幕色）
@@ -2689,11 +2720,16 @@ const WUER_HEAL = 0.15;   // 温柔的吾二：受到伤害的 15% 转为自身�
 const MIAOYE = { key:'miaoye', name:'喵叶喵', en:'M I A O Y E', color:0xc4f04a,
   tip:'她一句话也不说 · 只会从背后戳你', hp:0.85, spd:1.15, dmg:1.0 };
 
+// ---------------- 第三只 BOSS（wave 15）：枣子ᶜᵒˡˡᵃᵖˢᵃʳ ----------------
+// 人设：一颗没有棍的棒棒糖（塌缩星），口头禅「级级超棒」。零近战：糖豆螺旋 + 枣核引力牵引 + 半血塌缩爆发。
+const ZAOZI = { key:'zizi', name:'枣子ᶜᵒˡˡᵃᵖˢᵃʳ', en:'C O L L A P S A R', color:0xff4d6d,
+  tip:'糖豆螺旋 · 枣核引力 · 半血塌缩爆发', hp:1.0, spd:0.9, dmg:1.0 };
+
 function bossNameOf(e){
-  return e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
+  return e.bossKind === 9 ? ZAOZI.name : e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
 }
 function bossEnOf(e){
-  return e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
+  return e.bossKind === 9 ? ZAOZI.en : e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
 }
 
 function spawnEnemyAt(type, x, y, elite = false, master = null){
@@ -2757,6 +2793,14 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
       e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * wk.hp);
       e.dmg *= (1 + 0.13 * (t - 1)) * wk.dmg;
       e.speed *= (1 + 0.05 * (t - 1)) * wk.spd;
+    } else if(t === 3){
+      // 第三只 BOSS：枣子ᶜᵒˡˡᵃᵖˢᵃʳ（棒棒糖塌缩星，牵引 + 螺旋糖豆 + 塌缩爆发）
+      e.bossKind = 9;
+      e.color = ZAOZI.color;
+      e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
+      e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * ZAOZI.hp);
+      e.dmg *= 1 + 0.13 * (t - 1);
+      e.speed *= (1 + 0.05 * (t - 1)) * ZAOZI.spd;
     } else {
       e.bossKind = (t - 1) % BOSS_KINDS.length;
       e.color = BOSS_KINDS[e.bossKind].color;
@@ -2768,6 +2812,8 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     e.blinkCd = 4; e.spiralT = 0; e.chainLeft = 0; e.ringCd = 3;
     // 喵叶喵专用状态（潜行 / 戳刺 / 撅臀冲撞状态机）
     e.myState = 'stalk'; e.myT = 0; e.myCd = 2.4; e.myButtCd = 6; e.pokeActive = 0;
+    // 枣子专用状态（级级超棒层数 / 引力相 / 塌缩）
+    e.stacks = 0; e.cheerCd = 4; e.gravState = 0; e.gravT = 0; e.gravCd = 6; e.collapsed = 0; e.gravPow = 900;
     // 吾二专用状态（隐身 / 凑凑弹幕 / 猪猪召唤 / 温柔乡计时器）
     e.vis = 1; e.stealth = 0; e.stealthT = 4;
     e.coucouCd = 4; e.pigCd = 3; e.slowRingCd = 3; e.slowWarn = 0;
@@ -2801,6 +2847,7 @@ function bossEntrance(b){
   addFloat(b.x, b.y - b.r - 30, '!! ' + kName + ' 降临 !!', b.color, 24);
   if(b.wuerKind !== undefined) addFloat(b.x, b.y + b.r + 24, WUER_KINDS[b.wuerKind].tip, 0xffffff, 14);
   if(b.bossKind === 8) addFloat(b.x, b.y + b.r + 24, MIAOYE.tip, 0xffffff, 14);
+  if(b.bossKind === 9) addFloat(b.x, b.y + b.r + 24, ZAOZI.tip, 0xffffff, 14);
   if(cleared > 0) addFloat(b.x, b.y + b.r + 22, '湮灭 ×' + cleared, 0xffd7f4, 15);
   tone(70, 0.7, 'sawtooth', 0.28, 36);
   noiseHit(0.5, 0.2, 300, 0.8);
@@ -3643,6 +3690,7 @@ function updateEnemies(dt){
 
 // ---------------- BOSS AI（按 bossKind 分派，弹幕规模随 bossTier 增强） ----------------
 function updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  if(e.bossKind === 9){ updateZizi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 8){ updateMiaoYe(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind >= 5){ updateWuer(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   const kind = e.bossKind || 0;
@@ -4062,6 +4110,93 @@ function updateMiaoYe(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
   }
 }
 
+// ---------------- 枣子 AI（第三只 BOSS：棒棒糖塌缩星） ----------------
+// 口头禅「级级超棒」：周期性自我鼓舞叠层（提速螺旋弹）；枣核引力牵引玩家；半血塌缩强吸 + 放射爆。
+// 平衡：零近战，弹幕为低速糖豆；引力可用冲刺挣脱，最大威胁是被吸住后的贴身接触伤害。
+function updateZizi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  const bCol = e.color;
+  const pw = 1 + 0.18 * ((e.bossTier || 1) - 1);
+  const shot = (a, sp, rr, dm, cc) => {
+    const o = { x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
+      vx: Math.cos(a) * sp * pw, vy: Math.sin(a) * sp * pw, r: rr, dmg: dm * pw, life: 5.5, color: cc };
+    mkEBullet(o);
+  };
+  if(e.spawnT > 0){ e.vis = 1; return; }
+
+  // ---- 级级超棒：周期性鼓舞，最多叠 5 层（每层 +12% 射速 / 弹速） ----
+  e.cheerCd -= dt * slow;
+  if(e.cheerCd <= 0){
+    e.cheerCd = e.enraged ? 8 : 11;
+    e.stacks = Math.min(5, (e.stacks || 0) + 1);
+    addFloat(e.x, e.y - e.r - 26, '级级超棒！', 0xffe45c, 20);
+    addFloat(e.x, e.y - e.r - 8, '×' + e.stacks, 0xffd7f4, 13);
+    spawnRing(e.x, e.y, 0xffe45c, 100, 0.4, 2.5);
+    spawnParticles(e.x, e.y, 14, 0xffe45c, 240, 0.5, 2.6);
+    tone(760, 0.18, 'square', 0.09, 1000);
+  }
+  const st = e.stacks || 0;
+
+  // ---- 枣核引力：0.7s 凝聚预警 → 2.6s 牵引（撞向她就触发接触伤害，冲刺可挣脱） ----
+  if(e.gravState > 0){
+    e.gravT -= dt;
+    if(e.gravState === 1){
+      spawnParticles(e.x, e.y, 2, bCol, 60, 0.4, 2.2);
+      state.shake = Math.max(state.shake, 1);
+      if(e.gravT <= 0){
+        e.gravState = 2; e.gravT = 2.6; e.gravPow = 900;
+        spawnRing(e.x, e.y, bCol, 150, 0.5, 3);
+        tone(120, 0.3, 'sawtooth', 0.12, 60);
+      }
+    } else {
+      const gx = player.x - e.x, gy = player.y - e.y;
+      const gd = Math.hypot(gx, gy) || 1;
+      if(gd > e.r){
+        player.vx -= gx / gd * e.gravPow * dt;
+        player.vy -= gy / gd * e.gravPow * dt;
+      }
+      spawnParticles(e.x, e.y, 1, bCol, 200, 0.4, 2.4);
+      if(e.gravT <= 0){ e.gravState = 0; e.gravCd = e.enraged ? 6.5 : 9; }
+    }
+  } else {
+    e.gravCd -= dt * slow * aggro;
+    if(e.gravCd <= 0 && e.spawnT <= 0){
+      e.gravState = 1; e.gravT = 0.7;
+      addFloat(e.x, e.y - e.r - 16, '枣核引力！', bCol, 14);
+      spawnRing(e.x, e.y, bCol, 130, 0.6, 3);
+    }
+  }
+
+  // ---- 螺旋糖豆：双臂反向低速糖豆（层数提速） ----
+  e.shootCd -= dt * slow * aggro * (1 + 0.12 * st);
+  if(e.shootCd <= 0 && e.spawnT <= 0 && e.gravState !== 1){
+    e.shootCd = (e.enraged ? 2.0 : 2.6) / (1 + 0.12 * st);
+    e.spiralT += 0.9;
+    for(const sgn of [1, -1]){
+      for(let k = 0; k < 3; k++){
+        shot(e.spiralT * sgn + k * TAU / 3, 210 + 12 * st, 7, 8, bCol);
+      }
+    }
+    tone(220, 0.1, 'square', 0.06, 300);
+  }
+
+  // ---- 移动：慢速巡游保持中距（主场是引力，不必贴身） ----
+  const side = (e.id % 2 === 0) ? 1 : -1;
+  const dir = d > 300 ? 1 : (d < 220 ? -0.8 : 0);
+  e.x += (nx * dir + -ny * side * 0.5) * spd * dt;
+  e.y += (ny * dir + nx * side * 0.5) * spd * dt;
+
+  // ---- 塌缩爆发：半血一次，强吸 1.4s 立即接 16 向放射弹 ----
+  if(!e.collapsed && e.hp <= e.maxHp * 0.5){
+    e.collapsed = 1;
+    e.gravState = 2; e.gravT = 1.4; e.gravPow = 1500;   // 强吸：不冲刺很难挣脱
+    addFloat(e.x, e.y - e.r - 26, '塌缩！', 0xffffff, 22);
+    state.shake = 13; state.hitStop = Math.max(state.hitStop, 0.12);
+    spawnRing(e.x, e.y, 0xffffff, 160, 0.5, 3);
+    for(let k2 = 0; k2 < 16; k2++) shot(e.wob + k2 * TAU / 16, 260, 8, 10, 0xffd7f4);
+    tone(90, 0.5, 'sawtooth', 0.14, 50);
+  }
+}
+
 // ---------------- 环 / 粒子 ----------------
 function updateRings(dt){
   for(let i = rings.length - 1; i >= 0; i--){
@@ -4405,7 +4540,7 @@ function syncEnemies(){
     const spawnK = clamp(1 - e.spawnT / (e.type === 'boss' ? 1.25 : 0.45), 0, 1);
     const flash = e.hitFlash > 0;
     // BOSS 本体/描边/泛光用 4× 高清贴图（单位 168），吾二用专属造型，其他敌人沿用原贴图（单位 42）
-    const bodyTex = e.type === 'boss' ? (e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
+    const bodyTex = e.type === 'boss' ? (e.bossKind === 9 ? TEX.pZizi : e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
     const bodyU = e.type === 'boss' ? 168 : 42;
     // 呼吸：本体半径 3% 脉动，增加活物感
     const sr = e.r * (0.55 + spawnK * 0.45) * (1 + 0.03 * Math.sin(state.time * 4 + e.wob));
@@ -5799,6 +5934,7 @@ const INTRO_SECTIONS = [
     { text: '每 5 波一只 BOSS · 越往后体积越大、技能越强', span: true },
     { text: '第一只是「喵叶喵」—— 她一句话也不说（零弹幕），只会瞬移到你背后戳飞你 · 小心「撅」', span: true, color: 0xd8ff9a },
     { text: '第二只是「吾二」—— 黑化 / 温柔 / 害羞 随机一身：外形、颜色与技能各不相同', span: true, color: 0xffd7f4 },
+    { text: '第三只是「枣子ᶜᵒˡˡᵃᵖˢᵃʳ」—— 棒棒糖塌缩星：糖豆螺旋 · 枣核引力 · 半血塌缩爆发', span: true, color: 0xffb0c0 },
     { text: '首次升级是三张传说级祝福：吾二 / 喵雅喵（移速 +5% 换双子吾二）/ 喵斯喵（得分 +10% 换子弹 -10%）', span: true, color: 0xffb08a },
     { text: '黑化的吾二', color: 0xc8a8ff, dim: '速度飞快 · 伤害超高 · 黑化冲锋' },
     { text: '温柔的吾二', color: 0xa8ffd0, dim: '速度慢 · 伤害低 · 攻击她会回血' },
