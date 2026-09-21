@@ -890,7 +890,7 @@ const state = {
   spawnQueue: [], spawnTimer: 0, flash: 0, hitStop: 0,
   stormCd: 10, meteorCd: 3, particleCap: 900,
   level: 1, xp: 0, xpNeed: 40, pending: 0, cards: [], offer: [], sel: 0, novaFlash: 0,
-  wuerDone: false, stasis: 0, magnetize: 0, pendingSkill: null,
+  wuerDone: false, miaoBless: false, stasis: 0, magnetize: 0, pendingSkill: null,
   bossBarId: 0, bossBarK: 1, bossChunks: [], bossCutT: 0   // BOSS 血条：当前 BOSS / 上次血量比例 / 坠落碎块 / 断口灼热（死亡细胞式）
 };
 
@@ -1012,6 +1012,37 @@ const WUER_DEF = {
     spawnRing(player.x, player.y, 0xffc83d, 130, 0.6, 3);
     spawnSparks(player.x, player.y, 10, 0xffc83d, 1.5);
     spawnParticles(player.x, player.y, 30, 0xffc83d, 340, 0.7, 3);
+  }
+};
+
+// 特殊卡：喵雅喵（仅第一次升级与吾二同场出现）：小祝福，代价是第二轮 BOSS 变成双子吾二
+const MIAO_DEF = {
+  n: '喵雅喵', c: 0xff9a5c, v: [0, 0, 0, 0, 0],
+  d: v => '喵雅喵的祝福：移动速度 +5%',
+  s: '第二轮 BOSS 变为两只吾二（各自随机形态）',
+  a: (m, v) => {
+    m.spd *= 1.05;
+    state.miaoBless = true;
+    addFloat(player.x, player.y - 64, '喵雅喵的祝福！', 0xff9a5c, 20);
+    addFloat(player.x, player.y - 40, '第二轮 BOSS 将是双子吾二…', 0xffb08a, 14);
+    spawnRing(player.x, player.y, 0xff9a5c, 130, 0.6, 3);
+    spawnSparks(player.x, player.y, 10, 0xff9a5c, 1.5);
+    spawnParticles(player.x, player.y, 30, 0xff9a5c, 340, 0.7, 3);
+  }
+};
+
+// 特殊卡：喵斯喵（仅第一次升级与吾二同场出现）：得分小祝福，代价是子弹变小
+const MIAO2_DEF = {
+  n: '喵斯喵', c: 0x8fd8ff, v: [0, 0, 0, 0, 0],
+  d: v => '喵斯喵的祝福：得分获取 +10%',
+  s: '子弹大小 -10%',
+  a: (m, v) => {
+    m.score *= 1.1;
+    m.bR *= 0.9;
+    addFloat(player.x, player.y - 64, '喵斯喵的祝福！', 0x8fd8ff, 20);
+    spawnRing(player.x, player.y, 0x8fd8ff, 130, 0.6, 3);
+    spawnSparks(player.x, player.y, 10, 0x8fd8ff, 1.5);
+    spawnParticles(player.x, player.y, 30, 0x8fd8ff, 340, 0.7, 3);
   }
 };
 
@@ -2259,7 +2290,7 @@ function startGame(){
   state.stormCd = 9; state.meteorCd = 2;
   state.level = 1; state.xp = 0; state.xpNeed = xpNeed(1);
   state.pending = 0; state.cards = []; state.offer = [];
-  state.wuerDone = false;
+  state.wuerDone = false; state.miaoBless = false;
   state.stasis = 0; state.magnetize = 0; state.pendingSkill = null;
 
   M = MDEF();
@@ -2387,8 +2418,12 @@ function rollTier(){
 }
 
 function rollOffer(){
-  // 特殊规则：第一次升级三选一必定全是【吾二】，之后永不出现
-  if(!state.wuerDone) return [{ def: WUER_DEF, tier: 4 }, { def: WUER_DEF, tier: 4 }, { def: WUER_DEF, tier: 4 }];
+  // 特殊规则：第一次升级三选一是三张传说级祝福（吾二固定中间，喵雅喵/喵斯喵随机两边），之后永不出现
+  if(!state.wuerDone){
+    const cats = [{ def: MIAO_DEF, tier: 4 }, { def: MIAO2_DEF, tier: 4 }];
+    if(Math.random() < 0.5) cats.reverse();
+    return [cats[0], { def: WUER_DEF, tier: 4 }, cats[1]];
+  }
   // 保底规则：三张卡中至少一张是常驻技能（随机槽位）；其余从全卡池随机，玩家自由组合流派
   const actSlot = Math.floor(Math.random() * 3);
   const seen = {};
@@ -2444,7 +2479,7 @@ function pickOffer(i){
     return;
   }
   o.def.a(M, o.def.v[o.tier]);
-  if(o.def === WUER_DEF) state.wuerDone = true;
+  if(o.def === WUER_DEF || o.def === MIAO_DEF || o.def === MIAO2_DEF) state.wuerDone = true;
   state.cards.push({ n: o.def.n, t: o.tier, c: o.def.c });
   refreshDerived();
   SFX.card();
@@ -2749,8 +2784,11 @@ function startWave(n){
     for(const [name, w] of table){ r -= w; if(r <= 0){ t = name; break; } }
     q.push(t);
   }
-  // BOSS 波：BOSS 压轴登场，入场时湮灭残余小怪
-  if(bossWave) q.push('boss');
+  // BOSS 波：BOSS 压轴登场，入场时湮灭残余小怪（喵雅喵的祝福：第二轮 BOSS 双子吾二）
+  if(bossWave){
+    q.push('boss');
+    if(n === 10 && state.miaoBless) q.push('boss');
+  }
   state.spawnQueue = q;
   state.spawnTimer = 0.5;
   SFX.wave();
@@ -5208,17 +5246,21 @@ function drawMinimap(){
 }
 
 function drawBossBar(dt){
-  const b = enemies.find(e => e.type === 'boss');
-  if(!b){ HT.boss.text = ''; state.bossBarId = 0; state.bossChunks.length = 0; return; }
+  const bs = enemies.filter(e => e.type === 'boss');
+  if(!bs.length){ HT.boss.text = ''; state.bossBarId = 0; state.bossChunks.length = 0; return; }
+  const b = bs[0];
+  const enraged = bs.some(x => x.enraged);
   dt = dt || 0.016;
   // 桌面端压底、触屏端置顶压扁，避免遮挡战斗视野
   const bw = uiTouch ? Math.min(300, W * 0.5) : Math.min(470, W * 0.56);
   const bx = W / 2 - bw / 2, by = uiTouch ? 6 : H - 106, bh = uiTouch ? 10 : 22;
   const nameY = uiTouch ? by + bh + 2 : by - 18;
-  const k = clamp(b.hp / b.maxHp, 0, 1);
-  const barCol = b.enraged ? 0xff5e3d : b.color;
+  // 双子 BOSS（喵雅喵的祝福）：按总血池合并显示
+  const k = clamp(bs.reduce((s, x) => s + x.hp, 0) / bs.reduce((s, x) => s + x.maxHp, 1), 0, 1);
+  const barCol = enraged ? 0xff5e3d : b.color;
   // 死亡细胞式分段坠落：掉血部分碎成硬边方块，阶梯延迟剥落、受重力坠落消散；换 BOSS 清空
-  if(state.bossBarId !== b.id){ state.bossBarId = b.id; state.bossChunks.length = 0; state.bossCutT = 0; }
+  const barId = bs.length > 1 ? bs[0].id * 100000 + bs[1].id : b.id;
+  if(state.bossBarId !== barId){ state.bossBarId = barId; state.bossChunks.length = 0; state.bossCutT = 0; }
   if(k < state.bossBarK - 1e-4){
     const lost = state.bossBarK - k;
     const n = clamp(Math.round(lost * bw / bh), 1, 6);              // 块数随损失量，单块接近正方形
@@ -5268,9 +5310,10 @@ function drawBossBar(dt){
     hudG.moveTo(ex, by + bh / 2 - 7).lineTo(ex + 7, by + bh / 2).lineTo(ex, by + bh / 2 + 7).lineTo(ex - 7, by + bh / 2).closePath()
       .stroke({ width: 1.2, color: barCol, alpha: 0.9 });
   }
-  const bkName = bossNameOf(b), bkEn = bossEnOf(b);
-  HT.boss.text = b.enraged ? `狂 怒 · ${bkName}` : `${bkName}  ${bkEn}`;
-  HT.boss.style.fill = b.enraged ? 0xffb09a : 0xffd7f4;
+  const bkName = bs.length > 1 ? bs.map(bossNameOf).join(' × ') : bossNameOf(b);
+  const bkEn = bs.length > 1 ? 'T W I N S' : bossEnOf(b);
+  HT.boss.text = enraged ? `狂 怒 · ${bkName}` : `${bkName}  ${bkEn}`;
+  HT.boss.style.fill = enraged ? 0xffb09a : 0xffd7f4;
   setFs(HT.boss, uiTouch ? 9 : 11);
   HT.boss.position.set(W / 2, nameY);
   // 名称两侧装饰线
@@ -5557,6 +5600,7 @@ const INTRO_SECTIONS = [
   { title: 'BOSS 战', color: 0xff3d6e, wide: true, cols: 2, items: [
     { text: '每 5 波一只 BOSS · 越往后体积越大、技能越强', span: true },
     { text: '第二只是「吾二」—— 黑化 / 温柔 / 害羞 随机一身：外形、颜色与技能各不相同', span: true, color: 0xffd7f4 },
+    { text: '首次升级是三张传说级祝福：吾二 / 喵雅喵（移速 +5% 换双子吾二）/ 喵斯喵（得分 +10% 换子弹 -10%）', span: true, color: 0xffb08a },
     { text: '黑化的吾二', color: 0xc8a8ff, dim: '速度飞快 · 伤害超高 · 黑化冲锋' },
     { text: '温柔的吾二', color: 0xa8ffd0, dim: '速度慢 · 伤害低 · 攻击她会回血' },
     { text: '害羞的吾二', color: 0xffb0d8, dim: '伤害高 · 周期隐身 · 现身弹幕爆发' },
