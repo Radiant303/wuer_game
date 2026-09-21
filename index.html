@@ -631,6 +631,59 @@ function buildTextures(){
     g.beginPath(); g.arc(cx + 2, cy + 12, 5, Math.PI * 0.2, Math.PI * 0.8); g.stroke();   // 歪嘴笑
     g.globalCompositeOperation = 'source-over';
   });
+  // EterUltimate（第六只 BOSS）：白金天使猫 —— 光环 + 翼翅 + 闭眼笑 + 腮红
+  TEX.pEter = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2 + 5, R = 27;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
+    for(const sx of [-1, 1]){                       // 翼翅：体侧圆角小翅
+      g.beginPath();
+      g.moveTo(cx + sx * 16, cy - R * 0.3);
+      g.quadraticCurveTo(cx + sx * 40, cy - R * 0.55, cx + sx * 36, cy + R * 0.1);
+      g.quadraticCurveTo(cx + sx * 32, cy + R * 0.5, cx + sx * 26, cy + R * 0.42);
+      g.quadraticCurveTo(cx + sx * 30, cy + R * 0.1, cx + sx * 16, cy + R * 0.2);
+      g.closePath(); g.fill();
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.92)'; g.lineWidth = 3.2;
+    g.beginPath(); g.ellipse(cx, cy - R - 12, 15, 5.5, 0, 0, TAU); g.stroke();   // 悬浮光环
+    g.globalCompositeOperation = 'destination-out'; // 五官挖空
+    g.strokeStyle = '#000'; g.lineWidth = 2.8;
+    for(const sx of [-1, 1]){                       // 弯弯笑眼 ∩
+      g.beginPath(); g.arc(cx + sx * 14, cy - 5, 5, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
+    }
+    g.beginPath(); g.arc(cx, cy + 12, 5.5, Math.PI * 0.18, Math.PI * 0.82); g.stroke();   // 微笑
+    g.fillStyle = '#000';
+    for(const sx of [-1, 1]){                       // 腮红
+      g.beginPath(); g.ellipse(cx + sx * 19, cy + 7, 4, 2.2, 0, 0, TAU); g.fill();
+    }
+    g.globalCompositeOperation = 'source-over';
+  });
+  // 金朵儿（第七只 BOSS）：圆脸 + 头顶大金花 + 星星花痴眼 + 开心笑
+  TEX.pJuder = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2 + 6, R = 28;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    g.beginPath(); g.arc(cx, cy, R, 0, TAU); g.fill();
+    // 头顶大金花（五瓣 + 花心）
+    for(let i = 0; i < 5; i++){
+      const a = -Math.PI / 2 + i * TAU / 5;
+      g.beginPath();
+      g.ellipse(cx + Math.cos(a) * 8.5, cy - R - 6 + Math.sin(a) * 8.5, 7, 5, a, 0, TAU);
+      g.fill();
+    }
+    g.beginPath(); g.arc(cx, cy - R - 6, 4.5, 0, TAU); g.fill();
+    g.globalCompositeOperation = 'destination-out'; // 五官挖空
+    g.fillStyle = '#000';
+    for(const sx of [-1, 1]){                       // 星星花痴眼（四角星）
+      const ex = cx + sx * 13, ey = cy - 5;
+      g.beginPath();
+      g.moveTo(ex, ey - 5); g.lineTo(ex + 1.6, ey - 1.6); g.lineTo(ex + 5, ey);
+      g.lineTo(ex + 1.6, ey + 1.6); g.lineTo(ex, ey + 5); g.lineTo(ex - 1.6, ey + 1.6);
+      g.lineTo(ex - 5, ey); g.lineTo(ex - 1.6, ey - 1.6);
+      g.closePath(); g.fill();
+    }
+    g.beginPath(); g.arc(cx, cy + 11, 4.6, Math.PI * 0.15, Math.PI * 0.85); g.fill();   // 开心笑（张嘴）
+    g.globalCompositeOperation = 'source-over';
+  });
   // 枣子（第三只 BOSS）：没有棍的棒棒糖 —— 扇贝边圆糖 + 螺旋纹 + 眼嘴
   TEX.pZizi = bake(96, (g, s) => {
     const cx = s / 2, cy = s / 2, R = 29;
@@ -689,6 +742,29 @@ function buildTextures(){
     g.fillText(s2, w / 2, h / 2 + 2);
   });
   TEX.pkt = { p200: pktTex('200', 44), p404: pktTex('404', 40), p429: pktTex('429', 38), p500: pktTex('500', 36), p504: pktTex('504', 40) };
+  // EterUltimate 的认可 / 否决印章（白色汉字，运行时 tint 成 Green 安全 / Red 危险）
+  const markTex = ch => bakeWH(72, 72, (g, w, h) => {
+    g.font = 'bold 46px "PingFang SC", "Microsoft YaHei", sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#ffffff';
+    g.fillText(ch, w / 2, h / 2 + 2);
+  });
+  TEX.mark = { ke: markTex('可'), bu: markTex('不') };
+  // 金朵儿的花痴爱心（白色 ♡，运行时 tint 粉）
+  TEX.pkt.h = markTex('♡');
+  // 金朵儿的金瓣花弹（五瓣花 + 花心，白色供 tint）
+  TEX.pPetal = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2, R = s / 2 - 8;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    for(let i = 0; i < 5; i++){                     // 五瓣
+      const a = -Math.PI / 2 + i * TAU / 5;
+      g.beginPath();
+      g.ellipse(cx + Math.cos(a) * R * 0.52, cy + Math.sin(a) * R * 0.52, R * 0.42, R * 0.3, a, 0, TAU);
+      g.fill();
+    }
+    g.beginPath(); g.arc(cx, cy, R * 0.24, 0, TAU); g.fill();   // 花心
+  });
   // 猪猪小弟：圆脸 + 双耳 + 猪鼻（挖空），整体白色供运行时 tint
   TEX.pPig = bake(96, (g, s) => {
     const cx = s / 2, cy = s / 2, r = s / 2 - 8;
@@ -2815,11 +2891,25 @@ const XQM = { key:'xqm', name:'喵17qxm喵', en:'1 7 Q X M', color:0x7dff5c,
   tip:'newapi · 429 限流 · 504 超时', hp:1.05, spd:0.9, dmg:1.0 };
 const XQM_VERS = ['/ping', '/upload', '/stream'];   // newapi 轮换的接口版本
 
+// ---------------- 第六只 BOSS（wave 30）：EterUltimate ----------------
+// 人设：白金天使猫，口头禅「可以的妈妈」。她的弹幕是「可 / 不」印章：
+// 认可球碰到无害还回能，否决球才伤人；口头禅一喊全场印章翻转（妈妈改主意了）。
+// 66% / 33% 血各打一次 ULTIMATE 终极审判（蓄力 → 螺旋金弹 + 环波）。
+const ETER = { key:'eter', name:'EterUltimate', en:'E T E R U L T I M A T E', color:0xffd97a,
+  tip:'可以的妈妈 · 认可回能 · 否决伤人 · 双阶段 ULTIMATE', hp:1.1, spd:0.85, dmg:1.0 };
+const ETER_OK = 0x9dffc0, ETER_NO = 0xff6b8f;      // 认可绿 / 否决红
+
+// ---------------- 第七只 BOSS（wave 35）：金朵儿 ----------------
+// 人设：金花仙子，口头禅「好可爱的soulter」。金瓣花弹到期会绽放分裂；
+// 花痴发作时站着不动挨打（+30% 受伤，输出窗口）；半血漫天花雨。
+const JUDER = { key:'juder', name:'金朵儿', en:'J I N D U O E R', color:0xffb84d,
+  tip:'好可爱的soulter · 花弹会绽放 · 花痴时输出她', hp:1.1, spd:0.9, dmg:1.0 };
+
 function bossNameOf(e){
-  return e.bossKind === 11 ? XQM.name : e.bossKind === 10 ? XUNYI.name : e.bossKind === 9 ? ZAOZI.name : e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
+  return e.bossKind === 12 ? ETER.name : e.bossKind === 11 ? XQM.name : e.bossKind === 10 ? XUNYI.name : e.bossKind === 9 ? ZAOZI.name : e.bossKind === 8 ? MIAOYE.name : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
 }
 function bossEnOf(e){
-  return e.bossKind === 11 ? XQM.en : e.bossKind === 10 ? XUNYI.en : e.bossKind === 9 ? ZAOZI.en : e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
+  return e.bossKind === 12 ? ETER.en : e.bossKind === 11 ? XQM.en : e.bossKind === 10 ? XUNYI.en : e.bossKind === 9 ? ZAOZI.en : e.bossKind === 8 ? MIAOYE.en : e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
 }
 
 function spawnEnemyAt(type, x, y, elite = false, master = null){
@@ -2907,6 +2997,14 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
       e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * XQM.hp);
       e.dmg *= 1 + 0.13 * (t - 1);
       e.speed *= (1 + 0.05 * (t - 1)) * XQM.spd;
+    } else if(t === 6){
+      // 第六只 BOSS：EterUltimate（白金天使猫，可/不印章 + ULTIMATE 双阶段）
+      e.bossKind = 12;
+      e.color = ETER.color;
+      e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
+      e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * ETER.hp);
+      e.dmg *= 1 + 0.13 * (t - 1);
+      e.speed *= (1 + 0.05 * (t - 1)) * ETER.spd;
     } else {
       e.bossKind = (t - 1) % BOSS_KINDS.length;
       e.color = BOSS_KINDS[e.bossKind].color;
@@ -2924,6 +3022,8 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
     e.bombCd = 8; e.awayCd = 13; e.awayState = 0; e.awayT = 0;
     // 喵17qxm喵专用状态（接口版本 / newapi / 429 / 504 超时）
     e.apiVer = 0; e.apiCd = 6; e.rlCd = 8; e.timeoutT = 0; e.timedOut = 0;
+    // EterUltimate 专用状态（口头禅翻转 / ULTIMATE 双阶段）
+    e.flipCd = 11; e.ult1 = 0; e.ult2 = 0; e.ultPhase = 0; e.ultT = 0; e.ultSpiral = 0; e.ultRingT = 0;
     // 吾二专用状态（隐身 / 凑凑弹幕 / 猪猪召唤 / 温柔乡计时器）
     e.vis = 1; e.stealth = 0; e.stealthT = 4;
     e.coucouCd = 4; e.pigCd = 3; e.slowRingCd = 3; e.slowWarn = 0;
@@ -2960,6 +3060,7 @@ function bossEntrance(b){
   if(b.bossKind === 9) addFloat(b.x, b.y + b.r + 24, ZAOZI.tip, 0xffffff, 14);
   if(b.bossKind === 10) addFloat(b.x, b.y + b.r + 24, XUNYI.tip, 0xffffff, 14);
   if(b.bossKind === 11) addFloat(b.x, b.y + b.r + 24, XQM.tip, 0xffffff, 14);
+  if(b.bossKind === 12) addFloat(b.x, b.y + b.r + 24, ETER.tip, 0xffffff, 14);
   if(cleared > 0) addFloat(b.x, b.y + b.r + 22, '湮灭 ×' + cleared, 0xffd7f4, 15);
   tone(70, 0.7, 'sawtooth', 0.28, 36);
   noiseHit(0.5, 0.2, 300, 0.8);
@@ -3600,8 +3701,19 @@ function updateEBullets(dt){
       b.vx = Math.cos(ca) * nv; b.vy = Math.sin(ca) * nv;
     }
 
+    // EterUltimate：印章翻转过渡期无害穿透
+    if(b.flipT > 0) b.flipT -= dt;
+
     const d = Math.hypot(b.x - player.x, b.y - player.y);
-    if(d < player.r + b.r){
+    if(d < player.r + b.r && b.flipT <= 0){
+      if(b.ok){   // 认可球：妈妈的抱抱，无害还回能
+        player.energy = Math.min(player.maxEnergy, player.energy + 3);
+        addFloat(player.x, player.y - 30, '认可的抱抱 +3', 0x9dffc0, 12);
+        spawnParticles(b.x, b.y, 8, 0x9dffc0, 200, 0.4, 2.5);
+        tone(660, 0.1, 'sine', 0.05, 880);
+        freeEBullet(b); ebullets.splice(i, 1);
+        continue;
+      }
       if(b.web) player.webSlow = 1.4;
       if(b.snooze) player.webSlow = Math.max(player.webSlow, 2.6);   // 😴：命中催眠减速
       if(b.rl){                                                    // 429：请求被限流，射速减半
@@ -3837,6 +3949,7 @@ function updateEnemies(dt){
 
 // ---------------- BOSS AI（按 bossKind 分派，弹幕规模随 bossTier 增强） ----------------
 function updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  if(e.bossKind === 12){ updateEter(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 11){ updateXqm(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 10){ updateXunYi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   if(e.bossKind === 9){ updateZizi(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
@@ -4512,6 +4625,108 @@ function updateXqm(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
   e.y += (ny * dir + nx * side * 0.5) * spd * dt;
 }
 
+// ---------------- EterUltimate AI（第六只 BOSS：白金天使猫） ----------------
+// 弹幕 = 「可 / 不」印章：认可球无敌回能，否决球伤人；口头禅「可以的妈妈」全场翻转（0.6s 过渡）。
+// 66% / 33% 血各一次 ULTIMATE：1.2s 蓄力 → 2.5s 螺旋金弹 + 环波。
+function updateEter(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  const bCol = e.color;
+  const pw = 1 + 0.18 * ((e.bossTier || 1) - 1);
+  const aim = Math.atan2(dy, dx);
+  const orb = (a, ok, sp, r, dm) => {
+    mkEBullet({
+      x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
+      vx: Math.cos(a) * sp * pw, vy: Math.sin(a) * sp * pw,
+      r, dmg: dm * pw, life: 7, color: ok ? ETER_OK : ETER_NO,
+      pkt: ok ? TEX.mark.ke : TEX.mark.bu, ok,
+    });
+  };
+  if(e.spawnT > 0){ e.vis = 1; return; }
+
+  // ---- ULTIMATE 终极审判（66% / 33% 各一次）----
+  if(!e.ult1 && e.hp <= e.maxHp * 0.66){ e.ult1 = 1; e.ultPhase = 1; e.ultT = 1.2; e.ultSaid = 0; }
+  if(!e.ult2 && e.hp <= e.maxHp * 0.33){ e.ult2 = 1; e.ultPhase = 1; e.ultT = 1.2; e.ultSaid = 0; }
+  if(e.ultPhase > 0){
+    e.ultT -= dt;
+    if(e.ultPhase === 1){
+      if(!e.ultSaid){
+        e.ultSaid = 1;
+        addFloat(e.x, e.y - e.r - 28, 'ULTIMATE！', 0xffe45c, 24);
+        spawnRing(e.x, e.y, 0xffe45c, 200, 0.6, 4);
+        tone(80, 0.5, 'sawtooth', 0.14, 380);
+      }
+      spawnParticles(e.x, e.y, 3, 0xffe45c, 300, 0.4, 2.6);
+      state.shake = Math.max(state.shake, 2);
+      if(e.ultT <= 0){
+        e.ultPhase = 2; e.ultT = 2.5; e.ultRingT = 0.3;
+        state.flash = Math.max(state.flash, 0.3);
+        spawnRing(e.x, e.y, 0xffe45c, 260, 0.5, 4);
+        tone(120, 0.4, 'square', 0.12, 60);
+      }
+    } else {
+      e.ultSpiral += dt * 6;
+      for(let k = 0; k < 2; k++){
+        const a = e.ultSpiral + k * Math.PI;
+        mkEBullet({
+          x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
+          vx: Math.cos(a) * 230 * pw, vy: Math.sin(a) * 230 * pw,
+          r: 7, dmg: 9 * pw, life: 6, color: 0xffe45c,
+        });
+      }
+      e.ultRingT -= dt;
+      if(e.ultRingT <= 0){
+        e.ultRingT = 0.55;
+        for(let k = 0; k < 14; k++){
+          const a = e.wob + k * TAU / 14;
+          mkEBullet({
+            x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
+            vx: Math.cos(a) * 190 * pw, vy: Math.sin(a) * 190 * pw,
+            r: 8, dmg: 10 * pw, life: 5.5, color: 0xffe45c,
+          });
+        }
+        spawnRing(e.x, e.y, 0xffe45c, 120, 0.35, 3);
+      }
+      if(e.ultT <= 0){ e.ultPhase = 0; }
+    }
+    return;   // ULTIMATE 期间只释放终极技
+  }
+
+  // ---- 口头禅「可以的妈妈」：全场印章翻转 ----
+  e.flipCd -= dt * slow;
+  if(e.flipCd <= 0 && e.spawnT <= 0){
+    e.flipCd = e.enraged ? 9 : 12;
+    addFloat(e.x, e.y - e.r - 28, '可以的妈妈！', 0xffe45c, 22);
+    addFloat(e.x, e.y - e.r - 10, '妈妈改主意了', 0xffd7f4, 14);
+    spawnRing(e.x, e.y, 0xffe45c, 140, 0.55, 3);
+    spawnParticles(e.x, e.y, 18, 0xffe45c, 280, 0.5, 2.6);
+    for(const b of ebullets){
+      if(b.ok !== undefined){
+        b.ok = !b.ok;
+        b.color = b.ok ? ETER_OK : ETER_NO;
+        b.pkt = b.ok ? TEX.mark.ke : TEX.mark.bu;
+        b.flipT = 0.6;   // 过渡期无害穿透，避免冤杀
+      }
+    }
+    tone(760, 0.22, 'square', 0.1, 1180);
+  }
+
+  // ---- 常规：可/不混合印章波次 ----
+  e.shootCd -= dt * slow * aggro;
+  if(e.shootCd <= 0 && e.spawnT <= 0){
+    e.shootCd = (e.enraged ? 2.0 : 2.6) / Math.sqrt(pw);
+    const n2 = 4 + Math.floor(Math.random() * 3);
+    for(let k = 0; k < n2; k++){
+      orb(aim + rand(-0.6, 0.6), Math.random() < 0.5, 120 + Math.random() * 130, 8, 8);
+    }
+    tone(300, 0.1, 'sine', 0.06, 420);
+  }
+
+  // ---- 移动：终极存在不疾不徐 ----
+  const side = (e.id % 2 === 0) ? 1 : -1;
+  const dir = d > 300 ? 1 : (d < 220 ? -0.8 : 0);
+  e.x += (nx * dir + -ny * side * 0.45) * spd * dt;
+  e.y += (ny * dir + nx * side * 0.45) * spd * dt;
+}
+
 // ---------------- 环 / 粒子 ----------------
 function updateRings(dt){
   for(let i = rings.length - 1; i >= 0; i--){
@@ -4855,7 +5070,7 @@ function syncEnemies(){
     const spawnK = clamp(1 - e.spawnT / (e.type === 'boss' ? 1.25 : 0.45), 0, 1);
     const flash = e.hitFlash > 0;
     // BOSS 本体/描边/泛光用 4× 高清贴图（单位 168），吾二用专属造型，其他敌人沿用原贴图（单位 42）
-    const bodyTex = e.type === 'boss' ? (e.bossKind === 11 ? TEX.pXqm : e.bossKind === 10 ? TEX.pXunYi : e.bossKind === 9 ? TEX.pZizi : e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
+    const bodyTex = e.type === 'boss' ? (e.bossKind === 12 ? TEX.pEter : e.bossKind === 11 ? TEX.pXqm : e.bossKind === 10 ? TEX.pXunYi : e.bossKind === 9 ? TEX.pZizi : e.bossKind === 8 ? TEX.pMiaoYe : e.bossKind >= 5 ? TEX.pWuer[e.bossKind - 5] : TEX.pBossBig) : TEX[TEX_OF[e.type]];
     const bodyU = e.type === 'boss' ? 168 : 42;
     // 呼吸：本体半径 3% 脉动，增加活物感
     const sr = e.r * (0.55 + spawnK * 0.45) * (1 + 0.03 * Math.sin(state.time * 4 + e.wob));
@@ -5128,13 +5343,13 @@ function syncBullets(){
       continue;
     }
     if(b.pkt){
-      // 喵17qxm喵的状态码请求弹：白色 Courier 文本 + 同色外光（隐藏环与白点）
+      // 喵17qxm喵的状态码请求弹 / EterUltimate 的可不印章：白字 + 同色外光（隐藏环与白点）
       const t2 = b.spr2;
       t2.texture = b.pkt;
       t2.position.set(b.x, b.y);
       t2.scale.set(b.r * 1.7 / 72);
       t2.tint = b.color;
-      t2.alpha = 0.95;
+      t2.alpha = b.flipT > 0 ? 0.5 + 0.5 * Math.sin(state.time * 30) : 0.95;   // 翻转过渡：闪烁
       const g2 = b.spr;
       g2.position.set(b.x, b.y);
       g2.scale.set(b.r * 5 / 128);
@@ -6284,6 +6499,7 @@ const INTRO_SECTIONS = [
     { text: '第三只是「枣子ᶜᵒˡˡᵃᵖˢᵃʳ」—— 棒棒糖塌缩星：糖豆螺旋 · 枣核引力 · 半血塌缩爆发', span: true, color: 0xffb0c0 },
     { text: '第四只是「薰衣霓」—— 已读不回的网友：每种 emoji 表情弹行为各异 · 她会周期性装死', span: true, color: 0xd8c0ff },
     { text: '第五只是「喵17qxm喵」—— 接口猫：口头禅 newapi · 429 限流射速 · 504 全场超时', span: true, color: 0xb8ff9a },
+    { text: '第六只是「EterUltimate」—— 口头禅「可以的妈妈」：认可印章回能 · 否决印章伤人 · 双阶段 ULTIMATE', span: true, color: 0xffe9b8 },
     { text: '首次升级是三张传说级祝福：吾二 / 喵雅喵（移速 +5% 换双子吾二）/ 喵斯喵（得分 +10% 换子弹 -10%）', span: true, color: 0xffb08a },
     { text: '黑化的吾二', color: 0xc8a8ff, dim: '速度飞快 · 伤害超高 · 黑化冲锋' },
     { text: '温柔的吾二', color: 0xa8ffd0, dim: '速度慢 · 伤害低 · 攻击她会回血' },
