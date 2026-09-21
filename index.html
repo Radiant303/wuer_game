@@ -173,7 +173,9 @@ const SFX = {
   stormBlast(){ noiseHit(0.28, 0.14, 320, 0.5); tone(140, 0.3, 'sawtooth', 0.12, 40); },
   charge(){ tone(200, 0.4, 'square', 0.12, 700); },
   levelup(){ [660, 880, 1170].forEach((f, i) => setTimeout(() => tone(f, 0.18, 'triangle', 0.12), i * 80)); },
-  card(){ tone(880, 0.08, 'sine', 0.1, 1400); }
+  card(){ tone(880, 0.08, 'sine', 0.1, 1400); },
+  coucou(){ tone(620, 0.28, 'sine', 0.12, 300); setTimeout(() => tone(880, 0.2, 'sine', 0.08, 460), 90); },
+  piggy(){ if(!gate('piggy', 200)) return; tone(240, 0.22, 'square', 0.09, 150); noiseHit(0.1, 0.05, 900, 2); }
 };
 
 // ---------------- 启动：解析 Pixi 命名空间 ----------------
@@ -422,6 +424,30 @@ function buildTextures(){
   TEX.pBossBig = poly(8, 0.35, 4);
   TEX.pMini = poly(3, 0.25);
   TEX.pSplitter = poly(5, 0.35);
+  // 吾二的「凑凑」文字弹（白色文字，运行时 tint 成弹幕色）
+  TEX.coucou = bakeWH(76, 40, (g, w, h) => {
+    g.font = 'bold 32px "Courier New", monospace';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#ffffff';
+    g.fillText('凑凑', w / 2, h / 2 + 2);
+  });
+  // 猪猪小弟：圆脸 + 双耳 + 猪鼻（挖空），整体白色供运行时 tint
+  TEX.pPig = bake(96, (g, s) => {
+    const cx = s / 2, cy = s / 2, r = s / 2 - 8;
+    g.fillStyle = 'rgba(255,255,255,0.92)';
+    for(const sx of [-1, 1]){
+      g.beginPath();
+      g.moveTo(cx + sx * r * 0.55, cy - r * 0.70);
+      g.lineTo(cx + sx * r * 0.88, cy - r * 1.22);
+      g.lineTo(cx + sx * r * 0.16, cy - r * 1.00);
+      g.closePath(); g.fill();
+    }
+    g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.fill();
+    g.globalCompositeOperation = 'destination-out';
+    g.beginPath(); g.ellipse(cx, cy + r * 0.30, r * 0.36, r * 0.26, 0, 0, TAU); g.fill();
+    g.globalCompositeOperation = 'source-over';
+  });
   // 蜂刺：细长飞镖（朝 -Y 绘制，同步时旋转指向目标）
   TEX.pStinger = bake(96, (g, s) => {
     const cx = s / 2;
@@ -767,7 +793,7 @@ const player = {
   angle: 0, invuln: 0, fireCd: 0, dashCd: 0, dashTime: 0, healCd: 0,
   overload: 0, hitFlash: 0, shield: 0, rebound: 0, reboundT: 0,
   power: 0, powerType: null, powerMax: 9,
-  blessDmg: 0, blessShot: 0, frenzy: 0, webSlow: 0,
+  blessDmg: 0, blessShot: 0, frenzy: 0, webSlow: 0, coucouT: 0,
   actives: [],
   shotN: 0, reviveUsed: 0, trail: [], moveDir: { x: 0, y: 0 }
 };
@@ -1033,7 +1059,17 @@ function onKeyDown(e){
   const code = e.code;
   if(KEYMAP.includes(code)) e.preventDefault();
 
-  if(state.mode === 'title'){ audioInit(); if(!e.repeat) startGame(); return; }
+  if(state.mode === 'title'){
+    audioInit();
+    if(!e.repeat && code === 'KeyT'){ state.mode = 'intro'; return; }
+    if(!e.repeat) startGame();
+    return;
+  }
+  if(state.mode === 'intro'){
+    audioInit();
+    if(!e.repeat && (code === 'KeyT' || code === 'Escape' || code === 'Enter' || code === 'NumpadEnter' || code === 'Space')) state.mode = 'title';
+    return;
+  }
   if(state.mode === 'dead'){ if(!e.repeat && (code === 'KeyR' || code === 'Enter' || code === 'Space')){ audioInit(); startGame(); } return; }
   if(state.mode === 'cards'){
     if(!e.repeat){
@@ -2076,7 +2112,7 @@ function startGame(){
   player.shield = 0; player.rebound = 0; player.reboundT = 0;
   player.shotN = 0; player.reviveUsed = 0;
   player.blessDmg = 0; player.blessShot = 0;
-  player.frenzy = 0; player.webSlow = 0; player.actives.length = 0;
+  player.frenzy = 0; player.webSlow = 0; player.coucouT = 0; player.actives.length = 0;
   player.angle = -Math.PI / 2;
   player.trail.length = 0;
 
@@ -2296,7 +2332,7 @@ function dropLoot(e){
     spawnPickup(e.x - 22, e.y + 12, 'shield');
     return;
   }
-  if(e.type === 'mini'){
+  if(e.type === 'mini' || e.type === 'pig'){
     if(Math.random() < 0.16 * dm) spawnPickup(e.x, e.y, 'energy');
     return;
   }
@@ -2376,9 +2412,10 @@ const BASE = {
   stinger:  { hp: 22,  r: 12, speed: 150, color: 0xffd23d, dmg: 10, score: 14 },
   weaver:   { hp: 44,  r: 16, speed: 108, color: 0x38b6ff, dmg: 8,  score: 20 },
   carrier:  { hp: 90,  r: 24, speed: 52,  color: 0xff5e3d, dmg: 16, score: 26 },
+  pig:      { hp: 20,  r: 12, speed: 205, color: 0xff9ad5, dmg: 9,  score: 8  },
   boss:     { hp: 1150, r: 44, speed: 54, color: 0xff2fd0, dmg: 34, score: 250 }
 };
-const TEX_OF = { chaser:'pChaser', turret:'pTurret', tank:'pTank', splitter:'pSplitter', mini:'pMini', stinger:'pStinger', weaver:'pWeaver', carrier:'pCarrier', boss:'pBoss' };
+const TEX_OF = { chaser:'pChaser', turret:'pTurret', tank:'pTank', splitter:'pSplitter', mini:'pMini', stinger:'pStinger', weaver:'pWeaver', carrier:'pCarrier', pig:'pPig', boss:'pBoss' };
 
 // ---------------- BOSS 种类（每 5 波一只，越往后体积越大、技能越强） ----------------
 const BOSS_KINDS = [
@@ -2388,6 +2425,29 @@ const BOSS_KINDS = [
   { key:'tempest',  name:'风 暴 先 知', en:'T E M P E S T',     color:0xb06bff },  // 闪现 + 旋转风暴 + 环形弹幕
   { key:'core',     name:'歼 灭 核 心', en:'A N N I H I L A T O R', color:0xffc83d }   // 全能：所有机制强化版
 ];
+
+// ---------------- 第二只 BOSS（wave 10）：吾二三态随机一体 ----------------
+// 形状与常规 BOSS 相同（八边形大体），仅颜色不同；技能完全不同：
+//   黑化的吾二：速度飞快 · 伤害超高（附带黑化冲锋）
+//   温柔的吾二：速度慢 · 伤害低 · 玩家打她会回血（附带温柔乡减速领域）
+//   害羞的吾二：伤害高 · 速度一般 · 周期隐身（现身时弹幕爆发）
+// 三者共用：凑凑弹幕（文字弹"凑凑"，命中后玩家射速-90% · 伤害+150%）+ 召唤猪猪
+const WUER_KINDS = [
+  { key:'dark',   name:'黑化的吾二', en:'D A R K',   color:0x8a2be2, tip:'速度飞快 · 伤害超高 · 小心黑化冲锋',
+    hp:0.60, spd:1.6, dmg:1.35 },
+  { key:'gentle', name:'温柔的吾二', en:'G E N T L E', color:0x5affb0, tip:'攻击她会回血 · 别急着输出',
+    hp:0.55, spd:0.6, dmg:0.55 },
+  { key:'shy',    name:'害羞的吾二', en:'S H Y',    color:0xff8ad0, tip:'周期隐身 · 现身时有弹幕爆发',
+    hp:0.55, spd:1.0, dmg:1.30 }
+];
+const WUER_HEAL = 0.15;   // 温柔的吾二：受到伤害的 15% 转为自身治疗
+
+function bossNameOf(e){
+  return e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].name : BOSS_KINDS[e.bossKind || 0].name;
+}
+function bossEnOf(e){
+  return e.bossKind >= 5 ? WUER_KINDS[e.bossKind - 5].en : BOSS_KINDS[e.bossKind || 0].en;
+}
 
 function spawnEnemyAt(type, x, y, elite = false, master = null){
   const b = BASE[type];
@@ -2431,15 +2491,29 @@ function spawnEnemyAt(type, x, y, elite = false, master = null){
   if(type === 'boss'){
     // 阶级 = BOSS 波序号：体积 / 生命 / 伤害 / 弹幕强度逐阶提升
     const t = Math.max(1, Math.round(state.wave / 5));
-    const k = BOSS_KINDS[(t - 1) % BOSS_KINDS.length];
     e.bossTier = t;
-    e.bossKind = (t - 1) % BOSS_KINDS.length;
-    e.color = k.color;
-    e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
-    e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)));
-    e.dmg *= 1 + 0.13 * (t - 1);
-    e.speed *= 1 + 0.05 * (t - 1);
+    if(t === 2){
+      // 第二只 BOSS：吾二三态随机一体（形状相同，颜色与技能不同）
+      e.wuerKind = Math.floor(Math.random() * 3);
+      e.bossKind = 5 + e.wuerKind;               // >=5 走吾二专用 AI，避开常规分派
+      const wk = WUER_KINDS[e.wuerKind];
+      e.color = wk.color;
+      e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
+      e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)) * wk.hp);
+      e.dmg *= (1 + 0.13 * (t - 1)) * wk.dmg;
+      e.speed *= (1 + 0.05 * (t - 1)) * wk.spd;
+    } else {
+      e.bossKind = (t - 1) % BOSS_KINDS.length;
+      e.color = BOSS_KINDS[e.bossKind].color;
+      e.r = BASE.boss.r * (1 + 0.16 * (t - 1));
+      e.hp = e.maxHp = Math.round(e.hp * (1 + 0.32 * (t - 1)));
+      e.dmg *= 1 + 0.13 * (t - 1);
+      e.speed *= 1 + 0.05 * (t - 1);
+    }
     e.blinkCd = 4; e.spiralT = 0; e.chainLeft = 0; e.ringCd = 3;
+    // 吾二专用状态（隐身 / 凑凑弹幕 / 猪猪召唤 / 温柔乡计时器）
+    e.vis = 1; e.stealth = 0; e.stealthT = 4;
+    e.coucouCd = 4; e.pigCd = 3; e.slowRingCd = 3; e.slowWarn = 0;
     bossEntrance(e);
   }
   return e;
@@ -2466,8 +2540,9 @@ function bossEntrance(b){
   spawnRing(b.x, b.y, b.color, 138, 0.7, 3);
   spawnRing(b.x, b.y, 0xffffff, 100, 0.5, 2.5);
   spawnShards(b.x, b.y, 14, b.color, 1.6);
-  const kName = BOSS_KINDS[b.bossKind || 0].name;
+  const kName = bossNameOf(b);
   addFloat(b.x, b.y - b.r - 30, '!! ' + kName + ' 降临 !!', b.color, 24);
+  if(b.wuerKind !== undefined) addFloat(b.x, b.y + b.r + 24, WUER_KINDS[b.wuerKind].tip, 0xffffff, 14);
   if(cleared > 0) addFloat(b.x, b.y + b.r + 22, '湮灭 ×' + cleared, 0xffd7f4, 15);
   tone(70, 0.7, 'sawtooth', 0.28, 36);
   noiseHit(0.5, 0.2, 300, 0.8);
@@ -2555,6 +2630,15 @@ function damageEnemy(e, dmg, kx, ky){
   if(e.hp <= 0) return;
   if(M.exec > 0 && e.hp < e.maxHp * 0.35) dmg *= 1 + M.exec;
   e.hp -= dmg;
+  // 温柔的吾二：受到伤害的一部分转为自身治疗（濒死/未成形时不触发）
+  if(e.hp > 0 && e.wuerKind === 1 && e.spawnT <= 0){
+    const heal = dmg * WUER_HEAL;
+    e.hp = Math.min(e.maxHp, e.hp + heal);
+    if(gate('wuerHeal', 160)){
+      addFloat(e.x + rand(-10, 10), e.y - e.r - 8, '+' + Math.round(heal), 0x5affc8, 13);
+      spawnParticles(e.x, e.y, 3, 0x5affc8, 120, 0.4, 2);
+    }
+  }
   e.hitFlash = 0.14;
   e.kx += kx; e.ky += ky;
   if(M.ls > 0 && state.mode === 'playing'){
@@ -2759,7 +2843,9 @@ function tryFire(){
   const pow = p.power > 0 ? p.powerType : null;
   const bless = p.blessShot > 0;
   const fren = p.frenzy > 0;
+  const cou = p.coucouT > 0;   // 凑凑弹幕：射速-90% · 伤害+150%
   let rate = CFG.fireRate * M.rate;
+  if(cou) rate *= 10;
   if(pow === 'rapid') rate *= 0.55;
   if(fren) rate *= 0.625;
   p.fireCd = Math.max(0.03, rate);
@@ -2767,7 +2853,8 @@ function tryFire(){
   const a = p.angle;
   const muzzle = p.r + 8;
   let dmg = CFG.bulletDmg * M.dmg * CFG_OVERMUL(over) * (fren ? 1.4 : 1);
-  const baseCol = bless ? 0xffc83d : (fren ? 0xff9a6a : (over ? 0xffe45c : (pow ? POWER_INFO[pow].color : 0x5ffbf1)));
+  if(cou) dmg *= 2.5;
+  const baseCol = cou ? 0xffc83d : (bless ? 0xffc83d : (fren ? 0xff9a6a : (over ? 0xffe45c : (pow ? POWER_INFO[pow].color : 0x5ffbf1))));
   p.shotN++;
 
   const angles = [0];
@@ -2837,6 +2924,7 @@ function updatePlayer(dt){
   p.blessShot = Math.max(0, p.blessShot - dt);
   p.frenzy = Math.max(0, p.frenzy - dt);
   p.webSlow = Math.max(0, p.webSlow - dt);
+  p.coucouT = Math.max(0, p.coucouT - dt);
   for(const s of p.actives) s.cd = Math.max(0, s.cd - dt);
 
   if(M.idleHeal > 0 && !keys['KeyW'] && !keys['KeyA'] && !keys['KeyS'] && !keys['KeyD'] && !joy.active){
@@ -3020,6 +3108,19 @@ function updateBullets(dt){
   }
 }
 
+// 凑凑弹幕命中：玩家射速-90% · 伤害+150%（持续 5s，重复命中只刷新不叠加）
+function applyCoucou(){
+  const p = player;
+  const had = p.coucouT > 0;
+  p.coucouT = 5.0;
+  if(!had){
+    addFloat(p.x, p.y - 46, '凑凑弹幕！射速-90% · 伤害+150%', 0xffc83d, 16);
+    spawnRing(p.x, p.y, 0xffc83d, 110, 0.5, 3);
+    spawnParticles(p.x, p.y, 18, 0xffc83d, 260, 0.6, 2.6);
+    SFX.coucou();
+  }
+}
+
 function updateEBullets(dt){
   const stK = state.stasis > 0 ? 0.25 : 1;
   for(let i = ebullets.length - 1; i >= 0; i--){
@@ -3034,6 +3135,7 @@ function updateEBullets(dt){
     const d = Math.hypot(b.x - player.x, b.y - player.y);
     if(d < player.r + b.r){
       if(b.web) player.webSlow = 1.4;
+      if(b.coucou) applyCoucou();
       hurtPlayer(b.dmg);
       spawnParticles(b.x, b.y, 10, 0xff3d6e, 220, 0.45, 3);
       freeEBullet(b); ebullets.splice(i, 1);
@@ -3070,9 +3172,11 @@ function updateEnemies(dt){
     const aggro = 1 + (state.level - 1) * 0.05;
     const spd = e.speed * slow * aggro * zoneSpeedMul(e.x, e.y) * (1 + clamp((d - 280) / 900, 0, 0.9));
 
-    if(e.type === 'chaser' || e.type === 'mini'){
-      e.x += nx * spd * dt;
-      e.y += ny * spd * dt;
+    if(e.type === 'chaser' || e.type === 'mini' || e.type === 'pig'){
+      // 猪猪：高速直冲 + 小幅蛇形，只撞击不射击
+      const wob2 = e.type === 'pig' ? Math.sin(e.wob * 1.6) * 0.4 : 0;
+      e.x += (nx + -ny * wob2) * spd * dt;
+      e.y += (ny + nx * wob2) * spd * dt;
     } else if(e.type === 'splitter'){
       e.x += (nx + -ny * Math.sin(e.wob * 0.8) * 0.6) * spd * dt;
       e.y += (ny + nx * Math.sin(e.wob * 0.8) * 0.6) * spd * dt;
@@ -3210,6 +3314,7 @@ function updateEnemies(dt){
 
 // ---------------- BOSS AI（按 bossKind 分派，弹幕规模随 bossTier 增强） ----------------
 function updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  if(e.bossKind >= 5){ updateWuer(e, dt, slow, aggro, spd, nx, ny, d, dx, dy); return; }
   const kind = e.bossKind || 0;
   const tier = e.bossTier || 1;
   const pw = 1 + 0.18 * (tier - 1);
@@ -3361,6 +3466,170 @@ function updateBoss(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
     }
     summon([4, 6], 10.5, 7.5,
       () => (e.enraged && state.wave >= 10) || kind === 4 ? 'stinger' : 'mini', '召唤');
+  }
+}
+
+// ---------------- 吾二 BOSS AI（第二只：黑化 / 温柔 / 害羞 随机一体） ----------------
+// 三态移动与专属技能不同，但共用两招：
+//   凑凑弹幕：扇形发射文字弹「凑凑」，命中后玩家射速-90% · 伤害+150%（持续 5s）
+//   召唤猪猪：高速冲撞小弟，不发射子弹
+function updateWuer(e, dt, slow, aggro, spd, nx, ny, d, dx, dy){
+  const kind = e.wuerKind || 0;
+  const bCol = e.color;
+  const aim = Math.atan2(dy, dx);
+  const pw = 1 + 0.18 * (e.bossTier - 1);
+  const shot = (a, sp, rr, dm, cc, extra) => {
+    const o = { x: e.x + Math.cos(a) * (e.r + 8), y: e.y + Math.sin(a) * (e.r + 8),
+      vx: Math.cos(a) * sp * pw, vy: Math.sin(a) * sp * pw, r: rr, dmg: dm * pw, life: 5.5, color: cc };
+    if(extra) Object.assign(o, extra);
+    mkEBullet(o);
+  };
+
+  // ---- 害羞的吾二：周期隐身（隐身期停火 + 绕侧漂移，现身时环形弹幕爆发） ----
+  if(kind === 2){
+    e.stealthT -= dt * slow;
+    if(e.stealth === 0 && e.stealthT <= 0 && e.spawnT <= 0){
+      e.stealth = 1; e.stealthT = 3.0;
+      addFloat(e.x, e.y - e.r - 16, '隐身……', bCol, 14);
+      spawnParticles(e.x, e.y, 16, bCol, 260, 0.5, 2.6);
+      tone(760, 0.22, 'sine', 0.1, 240);
+    } else if(e.stealth === 1 && e.stealthT <= 0){
+      e.stealth = 0; e.stealthT = 6.0;
+      spawnRing(e.x, e.y, bCol, 130, 0.5, 3);
+      spawnSparks(e.x, e.y, 8, bCol, 1.4);
+      addFloat(e.x, e.y - e.r - 16, '现身！', bCol, 15);
+      const n2 = 10;
+      for(let k = 0; k < n2; k++) shot(e.wob + k * TAU / n2, 185, 7, 9, bCol);
+      tone(300, 0.28, 'sawtooth', 0.11, 640);
+    }
+    const target = e.stealth === 1 ? 0.13 : 1;
+    e.vis += (target - e.vis) * Math.min(1, dt * 4.5);
+  } else {
+    e.vis = 1;
+  }
+  const hidden = kind === 2 && e.stealth === 1;
+
+  // ---- 黑化的吾二：黑化冲锋（预警 → 高速直线猛冲） ----
+  if(kind === 0){
+    if(e.tele > 0){
+      e.tele -= dt * slow;
+      spawnParticles(e.x, e.y, 3, bCol, 130, 0.4, 2.6);
+      if(e.tele <= 0){ e.chargeT = 0.6; SFX.charge(); spawnRing(e.x, e.y, bCol, 90, 0.3, 4); }
+      return;
+    }
+    if(e.chargeT > 0){
+      e.chargeT -= dt;
+      const cs = 1020 * slow;
+      e.x += e.dirX * cs * dt; e.y += e.dirY * cs * dt;
+      spawnParticles(e.x, e.y, 2, bCol, 60, 0.3, 2.4);
+      state.shake = Math.max(state.shake, 3);
+      return;
+    }
+    e.chargeCd -= dt * slow * aggro;
+    if(e.chargeCd <= 0 && e.spawnT <= 0 && d > 130){
+      e.chargeCd = (e.enraged ? rand(3.5, 5) : rand(5, 7)) / Math.sqrt(pw);
+      e.tele = 0.42; e.dirX = nx; e.dirY = ny;
+      spawnRing(e.x, e.y, bCol, 120, 0.55, 3);
+      addFloat(e.x, e.y - e.r - 18, '!! 黑化冲锋', bCol, 14);
+      tone(140, 0.3, 'sawtooth', 0.12, 420);
+    }
+  }
+
+  // ---- 移动 ----
+  if(kind === 0){
+    e.x += nx * spd * dt; e.y += ny * spd * dt;                       // 黑化：高速直冲
+  } else if(kind === 1){
+    const side = (e.id % 2 === 0) ? 1 : -1;                            // 温柔：缓慢环绕保持中距
+    const dir = d > 300 ? 1 : (d < 220 ? -1 : 0);
+    e.x += (nx * dir + -ny * side * 0.55) * spd * dt;
+    e.y += (ny * dir + nx * side * 0.55) * spd * dt;
+  } else if(hidden){
+    const side = (e.id % 2 === 0) ? 1 : -1;                            // 害羞：隐身期绕侧快速漂移
+    e.x += (nx * 0.5 + -ny * side * 1.1) * spd * 1.7 * dt;
+    e.y += (ny * 0.5 + nx * side * 1.1) * spd * 1.7 * dt;
+  } else {
+    e.x += nx * spd * dt; e.y += ny * spd * dt;                       // 害羞：现身期正常逼近
+  }
+
+  // ---- 常规攻击（隐身中的害羞停火） ----
+  if(!hidden){
+    e.shootCd -= dt * slow * aggro;
+    if(e.shootCd <= 0 && e.spawnT <= 0){
+      if(kind === 0){
+        e.shootCd = (e.enraged ? 1.4 : 1.9) / pw;
+        for(let k = -1; k <= 1; k++) shot(aim + k * 0.2, 300, 7, 10, bCol);
+        tone(180, 0.15, 'sawtooth', 0.09, 90);
+      } else if(kind === 1){
+        e.shootCd = (e.enraged ? 2.1 : 2.7) / pw;
+        shot(aim + rand(-0.06, 0.06), 205, 7, 8, bCol);
+        tone(260, 0.12, 'sine', 0.06, 200);
+      } else {
+        e.shootCd = (e.enraged ? 1.7 : 2.3) / pw;
+        for(let k = -1; k <= 1; k++) shot(aim + k * 0.24, 285, 7, 11, bCol);
+        tone(330, 0.13, 'square', 0.08, 200);
+      }
+    }
+  }
+
+  // ---- 温柔的吾二：温柔乡（预警 0.9s → 300 范围减速 + 轻伤） ----
+  if(kind === 1){
+    if(e.slowWarn > 0){
+      e.slowWarn -= dt;
+      if(Math.random() < dt * 26){
+        spawnParticles(e.x + rand(-300, 300), e.y + rand(-300, 300), 1, 0x9dffd8, 30, 0.5, 2);
+      }
+      if(e.slowWarn <= 0){
+        spawnRing(e.x, e.y, 0x9dffd8, 130, 0.55, 4);
+        spawnParticles(e.x, e.y, 26, 0x9dffd8, 320, 0.6, 2.6);
+        addFloat(e.x, e.y - e.r - 18, '温柔乡', 0x9dffd8, 15);
+        tone(520, 0.32, 'sine', 0.1, 260);
+        if(Math.hypot(player.x - e.x, player.y - e.y) < 300 + player.r){
+          player.webSlow = Math.max(player.webSlow, 1.6);
+          hurtPlayer(6);
+          addFloat(player.x, player.y - 30, '被温柔包裹', 0x9dffd8, 13);
+        }
+      }
+    } else {
+      e.slowRingCd -= dt * slow;
+      if(e.slowRingCd <= 0 && e.spawnT <= 0){
+        e.slowRingCd = e.enraged ? 5.5 : 7;
+        e.slowWarn = 0.9;
+        addFloat(e.x, e.y - e.r - 18, '温柔乡·酝酿', 0x9dffd8, 13);
+      }
+    }
+  }
+
+  // ---- 共用：凑凑弹幕（文字弹「凑凑」：命中后玩家射速-90% · 伤害+150%，持续 5s） ----
+  e.coucouCd -= dt * slow * aggro;
+  if(e.coucouCd <= 0 && e.spawnT <= 0){
+    e.coucouCd = (e.enraged ? 6.5 : 9) / Math.sqrt(pw);
+    const n2 = e.enraged ? 7 : 5;
+    for(let k = 0; k < n2; k++){
+      shot(aim + (k - (n2 - 1) / 2) * 0.24, 150, 12, 6, 0xffd7f4, { coucou: true });
+    }
+    addFloat(e.x, e.y - e.r - 18, '凑凑弹幕！', 0xffd7f4, 16);
+    spawnRing(e.x, e.y, 0xffd7f4, 120, 0.5, 3);
+    SFX.coucou();
+  }
+
+  // ---- 共用：召唤猪猪（只撞击 · 不发射子弹 · 速度高 · 撞击频率高） ----
+  e.pigCd -= dt * slow;
+  if(e.pigCd <= 0 && e.spawnT <= 0){
+    e.pigCd = e.enraged ? 5 : 6.5;
+    let pigs = 0;
+    for(const o of enemies) if(o.type === 'pig' && o.master === 'boss') pigs++;
+    const cap = e.enraged ? 7 : 5;
+    if(pigs < cap){
+      for(let k = 0; k < 2; k++){
+        const a = e.wob + k * Math.PI + Math.PI / 2;
+        spawnEnemyAt('pig',
+          clamp(e.x + Math.cos(a) * (e.r + 30), 30, world.w - 30),
+          clamp(e.y + Math.sin(a) * (e.r + 30), 30, world.h - 30), false, 'boss');
+      }
+      addFloat(e.x, e.y - e.r - 20, '召唤 · 猪猪', 0xff9ad5, 14);
+      spawnRing(e.x, e.y, 0xff9ad5, 110, 0.5, 2.5);
+      SFX.piggy();
+    }
   }
 }
 
@@ -3717,6 +3986,7 @@ function syncEnemies(){
       : e.type === 'stinger' ? (e.chargeT > 0 ? Math.atan2(e.dirY, e.dirX) : Math.atan2(player.y - e.y, player.x - e.x)) + Math.PI / 2
       : e.type === 'weaver' ? state.time * 1.4 + e.wob
       : e.type === 'carrier' ? state.time * 0.35
+      : e.type === 'pig' ? state.time * 2.2 + e.wob
       : e.type === 'boss' ? state.time * (e.enraged ? 1.1 : 0.5)
       : e.type === 'tank' ? state.time * 0.5 : 0;
 
@@ -3875,6 +4145,15 @@ function syncEnemies(){
       eliteRim.alpha = 0.5 + 0.2 * Math.sin(state.time * 5 + e.wob);
     }
 
+    // 吾二隐身（害羞的吾二）：除血条外整体淡出，血条保持可见保证公平
+    if(e.bossKind >= 5 && e.vis !== undefined && e.vis < 0.999){
+      for(let si = 0; si < e.sprites.length; si++){
+        if(si === 5 || si === 6) continue;   // hpBg / hpFill 不参与隐身淡出
+        const s2 = e.sprites[si];
+        if(s2) s2.alpha *= e.vis;
+      }
+    }
+
     if(hpBg && hpFill){
       if(e.hp < e.maxHp){
         const w = e.type === 'boss' ? e.r * 3.2 : e.r * 2.4;
@@ -3935,6 +4214,22 @@ function syncBullets(){
     c.alpha = 1;
   }
   for(const b of ebullets){
+    if(b.coucou){
+      // 凑凑文字弹：外光 + 「凑凑」贴图（隐藏环与白点）
+      const t2 = b.spr2;
+      t2.texture = TEX.coucou;
+      t2.position.set(b.x, b.y);
+      t2.scale.set(b.r * 2.4 / 40);
+      t2.tint = b.color;
+      t2.alpha = 0.95;
+      const g2 = b.spr;
+      g2.position.set(b.x, b.y);
+      g2.scale.set(b.r * 5 / 128);
+      g2.tint = b.color;
+      g2.alpha = 0.55;
+      b.spr3.visible = false;
+      continue;
+    }
     // 外光
     const g = b.spr;
     g.position.set(b.x, b.y);
@@ -4023,7 +4318,7 @@ const PV = {};
 function updatePlayerVisual(){
   const p = player;
   const powCol = p.power > 0 ? POWER_INFO[p.powerType].color : null;
-  const mainCol = (p.blessDmg > 0 || p.blessShot > 0) ? 0xffc83d : (p.overload > 0 ? 0xffe45c : (powCol || 0x5ffbf1));
+  const mainCol = (p.blessDmg > 0 || p.blessShot > 0 || p.coucouT > 0) ? 0xffc83d : (p.overload > 0 ? 0xffe45c : (powCol || 0x5ffbf1));
   const blinkA = p.invuln > 0 ? (0.62 + 0.38 * Math.sin(state.time * 24)) : 1;
   // 等级阶段：每 3 级一阶（0~4），驱动轨道菱形数量与品质色
   const tier = clamp(Math.floor((state.level - 1) / 3), 0, 4);
@@ -4156,6 +4451,11 @@ function updatePlayerVisual(){
     const k = clamp(player.power / player.powerMax, 0, 1);
     ggrid.arc(player.x, player.y, player.r + 15, -Math.PI / 2, -Math.PI / 2 + TAU * k)
          .stroke({ width: 1.2, color: POWER_INFO[player.powerType].color, alpha: 0.85 });
+  }
+  // 凑凑弹幕倒计时环（金色外环）
+  if(state.mode !== 'title' && state.mode !== 'dead' && player.coucouT > 0){
+    ggrid.arc(player.x, player.y, player.r + 22, -Math.PI / 2, -Math.PI / 2 + TAU * clamp(player.coucouT / 5, 0, 1))
+         .stroke({ width: 2, color: 0xffc83d, alpha: 0.8 });
   }
 
   // 强化碎片（仍用精灵，跟随球体）
@@ -4304,6 +4604,7 @@ function buildHUD(){
     return t;
   };
   HT.hp = mk(12); HT.en = mk(10); HT.lv = mk(12); HT.cards = mk(10);
+  HT.coucou = mk(11);
   HT.score = mk(28, 'right'); HT.wave = mk(13, 'right'); HT.foe = mk(11, 'right');
   HT.combo = mk(30, 'center'); HT.power = mk(12); HT.boss = mk(11, 'center');
   HT.shield = mk(11); HT.rebound = mk(11); HT.boost = mk(11);
@@ -4426,6 +4727,13 @@ function drawHUD(){
   HT.rebound.position.set(pad + 2, sy);
   setFs(HT.rebound, touchHud ? 9 : 11);
   sy += 14 * hk;
+  if(p.coucouT > 0){
+    HT.coucou.text = `凑凑 ${p.coucouT.toFixed(1)}s · 射速-90% · 伤害+150%`;
+    HT.coucou.style.fill = 0xffc83d;
+    HT.coucou.position.set(pad + 2, sy);
+    setFs(HT.coucou, touchHud ? 9 : 11);
+    sy += 14 * hk;
+  } else HT.coucou.text = '';
   if(state.cards.length){
     const last = state.cards[state.cards.length - 1];
     HT.cards.text = `卡牌 ${state.cards.length} · 上级 ${TIER_NAME[last.t]}`;
@@ -4672,7 +4980,9 @@ function drawMinimap(){
     hudG.circle(mx + s.x * sx, my + s.y * sy, 3.2).fill({ color: 0xff8c28, alpha: 0.85 });
   }
   for(const e of enemies){
-    hudG.circle(mx + e.x * sx, my + e.y * sy, e.type === 'boss' ? 4.5 : e.elite ? 3.2 : 2.6).fill({ color: e.elite ? 0xffc83d : e.color, alpha: 0.95 });
+    // 隐身中的吾二在小地图上只剩一个淡点（保留可追踪性，但不暴露精确位置）
+    const ma = (e.bossKind >= 5 && e.stealth === 1) ? 0.22 : 0.95;
+    hudG.circle(mx + e.x * sx, my + e.y * sy, e.type === 'boss' ? 4.5 : e.elite ? 3.2 : 2.6).fill({ color: e.elite ? 0xffc83d : e.color, alpha: ma });
   }
   hudG.circle(mx + player.x * sx, my + player.y * sy, 3.4).fill({ color: 0xffffff, alpha: 1 });
 }
@@ -4705,8 +5015,8 @@ function drawBossBar(){
     hudG.moveTo(ex, by + bh / 2 - 7).lineTo(ex + 7, by + bh / 2).lineTo(ex, by + bh / 2 + 7).lineTo(ex - 7, by + bh / 2).closePath()
       .stroke({ width: 1.2, color: barCol, alpha: 0.9 });
   }
-  const bk = BOSS_KINDS[b.bossKind || 0];
-  HT.boss.text = b.enraged ? `狂 怒 · ${bk.name}` : `${bk.name}  ${bk.en}`;
+  const bkName = bossNameOf(b), bkEn = bossEnOf(b);
+  HT.boss.text = b.enraged ? `狂 怒 · ${bkName}` : `${bkName}  ${bkEn}`;
   HT.boss.style.fill = b.enraged ? 0xffb09a : 0xffd7f4;
   setFs(HT.boss, uiTouch ? 9 : 11);
   HT.boss.position.set(W / 2, nameY);
@@ -4957,6 +5267,180 @@ function clearCardUI(){
   CARD_UI.length = 0;
 }
 
+// ---------------- 玩法说明（数据驱动） ----------------
+// 加/改内容只动 INTRO_SECTIONS：
+//   节   { title, color, items, wide?, cols? }  wide=通栏 · cols=节内分列（默认 1）
+//   条目 { keys?, text, dim?, color?, span? }   keys=键帽 · dim=主文后的暗色补充 · span=节内通栏
+const INTRO_SKILL_BLURB = {
+  nova: '新星冲击 · 范围伤害', stasis: '全场敌人与敌弹减速',
+  aegis: '无敌数秒 + 1 层护盾', frenzy: '射速与伤害大幅提升',
+  blink: '向前瞬移 · 短暂无敌', magnet: '全图拾取物吸附'
+};
+const INTRO_SECTIONS = [
+  { title: '基本操作', color: 0x5ffbf1, items: [
+    { keys: ['W','A','S','D'], text: '移动', dim: '撞墙反弹可叠加速度' },
+    { keys: ['J'], text: '射击', dim: '按住连发' },
+    { keys: ['K'], text: '冲刺', dim: '冲刺期间无敌 · 可撞伤敌人' },
+    { keys: ['H'], text: '修复', dim: '消耗 30 能量回复生命' },
+    { keys: ['空格'], text: '过载', dim: '消耗 50 能量 · 短时火力暴走' },
+    { keys: ['1','2','3'], text: '释放常驻技能' },
+    { keys: ['ESC'], text: '暂停 / 继续' }
+  ]},
+  { title: '成长系统', color: 0xffe45c, items: [
+    { text: '击破敌人获得经验 · 升级后三选一强化卡' },
+    { text: '61 种效果 × 5 阶', dim: '部分强力卡带有副作用，选前看清' },
+    { text: '每次升级必出常驻技能卡 · 栏满时需替换旧技能' },
+    { text: '每 3 波随机变换地形', dim: 'BOSS 波不变' }
+  ]},
+  { title: '常驻技能', color: 0xb06bff, items:
+    ACTIVE_DEFS.map(d => ({ text: d.n, color: d.c, dim: INTRO_SKILL_BLURB[d.id] || '' }))
+  },
+  { title: '移动端', color: 0x9fb0c8, items: [
+    { text: '横屏游玩 · 进入战斗自动尝试全屏' },
+    { text: '左侧摇杆移动 · 右侧按钮 射击 / 冲刺 / 修复 / 过载' },
+    { text: '技能按钮沿外弧排列 · 冷却实时读秒' }
+  ]},
+  { title: 'BOSS 战', color: 0xff3d6e, wide: true, cols: 2, items: [
+    { text: '每 5 波一只 BOSS · 越往后体积越大、技能越强', span: true },
+    { text: '第二只是「吾二」—— 黑化 / 温柔 / 害羞 随机一身：形状相同，颜色与技能各不同', span: true, color: 0xffd7f4 },
+    { text: '黑化的吾二', color: 0xc8a8ff, dim: '速度飞快 · 伤害超高 · 黑化冲锋' },
+    { text: '温柔的吾二', color: 0xa8ffd0, dim: '速度慢 · 伤害低 · 攻击她会回血' },
+    { text: '害羞的吾二', color: 0xffb0d8, dim: '伤害高 · 周期隐身 · 现身弹幕爆发' },
+    { text: '吾二共用技', dim: '凑凑弹幕：命中后射速 -90% · 伤害 +150%' },
+    { text: '吾二共用技', dim: '召唤猪猪：高速冲撞 · 只撞不射' }
+  ]}
+];
+
+// 按参考尺寸一次性排版（面板原点 = 容器原点）；resize 只整体缩放，见 layoutScreens
+function buildIntro(){
+  const con = SCR.intro;
+  const PW = 1100, PAD = 30, HEADER = 66, FOOTER = 48, COLGAP = 28, SECGAP = 20;
+  const contentW = PW - PAD * 2;
+  const colW = (contentW - COLGAP) / 2;
+  const mk = (text, size, color, extra) => new Pixi.Text({
+    text, style: Object.assign({ fontFamily: '"Courier New", monospace', fontSize: size, fontWeight: 'bold', fill: color }, extra || {})
+  });
+
+  // 页眉 / 底板（底板最后画，先占位保证层级在最下）
+  const deco = new Pixi.Graphics();
+  con.addChild(deco);
+  const iTitle = mk('玩 法 说 明', 24, 0xffe45c);
+  neon(iTitle, 0xffe45c, 14);
+  iTitle.position.set(PAD, 14);
+  con.addChild(iTitle);
+  const iVer = mk('NEON PINBALL · v4', 13, 0x5d6b7d);
+  iVer.anchor.set(1, 0);
+  iVer.position.set(PW - PAD, 22);
+  con.addChild(iVer);
+
+  // 节：标题栏 + 条目流
+  const buildSection = (def, SW) => {
+    const box = new Pixi.Container();
+    const g = new Pixi.Graphics();
+    box.addChild(g);
+    g.rect(0, 4, 5, 18).fill({ color: def.color });
+    g.rect(0, 32, SW, 1).fill({ color: def.color, alpha: 0.22 });
+    const ht = mk(def.title, 17, def.color);
+    neon(ht, def.color, 9);
+    ht.position.set(14, 0);
+    box.addChild(ht);
+    const headH = 42;
+    const innerCols = def.cols || 1;
+    const icw = (SW - (innerCols - 1) * 22) / innerCols;
+    const colYs = [];
+    for(let i = 0; i < innerCols; i++) colYs.push(headH);
+    let spanY = headH;
+    for(const it of def.items){
+      if(it.span) spanY = Math.max(spanY, Math.max.apply(null, colYs));
+      const ci = it.span ? -1 : colYs.indexOf(Math.min.apply(null, colYs));
+      const ix = it.span ? 0 : ci * (icw + 22);
+      const iw = it.span ? SW : icw;
+      const iy = it.span ? spanY : colYs[ci];
+      const row = new Pixi.Container();
+      row.position.set(ix, iy);
+      const rg = new Pixi.Graphics();
+      row.addChild(rg);
+      let cx = 0, rowH = 24;
+      if(it.keys){
+        for(const k of it.keys){
+          const kt = mk(k, 12, 0xdff6ff);
+          const kw = Math.max(22, kt.width + 14);
+          rg.roundRect(cx, 1, kw, 20, 5).fill({ color: 0x0a1220, alpha: 0.95 }).stroke({ width: 1.2, color: def.color, alpha: 0.55 });
+          kt.anchor.set(0.5, 0.5);
+          kt.position.set(cx + kw / 2, 11);
+          row.addChild(kt);
+          cx += kw + 5;
+        }
+        cx += 7;
+      } else {
+        rg.rect(3, 8, 5, 5).fill({ color: it.color || def.color, alpha: 0.9 });
+        cx = 15;
+      }
+      const tt = mk(it.text, 14, it.color || 0xc8e6ff, { wordWrap: true, wordWrapWidth: iw - cx, lineHeight: 19 });
+      tt.position.set(cx, 2);
+      row.addChild(tt);
+      rowH = Math.max(rowH, tt.height + 7);
+      if(it.dim){
+        const dt = mk(it.dim, 13, 0x8fa3bd, { wordWrap: true, wordWrapWidth: iw - cx, lineHeight: 18 });
+        if(cx + tt.width + 12 + dt.width <= iw && tt.height <= 20){
+          dt.position.set(cx + tt.width + 12, 3);
+        } else {
+          dt.position.set(cx, 5 + tt.height);
+          rowH = Math.max(rowH, tt.height + 5 + dt.height + 7);
+        }
+        row.addChild(dt);
+      }
+      box.addChild(row);
+      if(it.span){ spanY += rowH; for(let i = 0; i < colYs.length; i++) colYs[i] = Math.max(colYs[i], spanY); }
+      else colYs[ci] += rowH;
+    }
+    return { box, h: Math.max(spanY, Math.max.apply(null, colYs)) + 2 };
+  };
+
+  // 文档流：普通节进双栏（贪心放矮列），wide 节通栏
+  let yCur = HEADER, block = null;
+  const flush = () => { if(block){ yCur = Math.max(yCur, block.y0 + Math.max(block.hs[0], block.hs[1])); block = null; } };
+  for(const def of INTRO_SECTIONS){
+    if(def.wide){
+      flush();
+      yCur += 4;
+      const b = buildSection(def, contentW);
+      b.box.position.set(PAD, yCur);
+      con.addChild(b.box);
+      yCur += b.h;
+    } else {
+      if(!block) block = { y0: yCur, hs: [0, 0] };
+      const b = buildSection(def, colW);
+      const ci = block.hs[0] <= block.hs[1] ? 0 : 1;
+      b.box.position.set(PAD + ci * (colW + COLGAP), block.y0 + block.hs[ci]);
+      con.addChild(b.box);
+      block.hs[ci] += b.h + SECGAP;
+    }
+  }
+  flush();
+  const PH = yCur + FOOTER;
+
+  // 面板 / 页眉带 / 四角括号
+  deco.roundRect(0, 0, PW, PH, 14).fill({ color: 0x0a0e1a, alpha: 0.94 }).stroke({ width: 1.4, color: 0x5ffbf1, alpha: 0.5 });
+  deco.roundRect(0, 0, PW, 52, 14).fill({ color: 0xffe45c, alpha: 0.09 });
+  deco.rect(0, 26, PW, 26).fill({ color: 0xffe45c, alpha: 0.09 });
+  deco.rect(0, 52, PW, 1).fill({ color: 0xffe45c, alpha: 0.35 });
+  const bl = 16, bi = 8;
+  deco.moveTo(bi, bi + bl).lineTo(bi, bi).lineTo(bi + bl, bi)
+      .moveTo(PW - bi - bl, bi).lineTo(PW - bi, bi).lineTo(PW - bi, bi + bl)
+      .moveTo(bi, PH - bi - bl).lineTo(bi, PH - bi).lineTo(bi + bl, PH - bi)
+      .moveTo(PW - bi - bl, PH - bi).lineTo(PW - bi, PH - bi).lineTo(PW - bi, PH - bi - bl)
+      .stroke({ width: 1.2, color: 0xffe45c, alpha: 0.45 });
+
+  // 返回提示（文案随设备切换，在 layoutScreens 里更新）
+  const iBack = mk('', 13, 0x6d7f96);
+  iBack.anchor.set(0.5, 0);
+  iBack.position.set(PW / 2, PH - 32);
+  con.addChild(iBack);
+
+  SCR.intro._parts = { back: iBack, pw: PW, ph: PH };
+}
+
 // ---------------- 标题 / 结束 ----------------
 const SCR = {};
 function buildScreens(){
@@ -4972,6 +5456,7 @@ function buildScreens(){
   }
 
   SCR.title = new Pixi.Container();
+  SCR.title.eventMode = 'static';
   hudLayer.addChild(SCR.title);
   const t1 = new Pixi.Text({ text: '弹核球', style: { fontFamily: '"Courier New", monospace', fontSize: 62, fontWeight: 'bold', fill: 0x5ffbf1 } });
   t1.anchor.set(0.5, 0);
@@ -4979,16 +5464,34 @@ function buildScreens(){
   const t2 = new Pixi.Text({ text: 'N E O N   P I N B A L L   v4', style: { fontFamily: '"Courier New", monospace', fontSize: 22, fontWeight: 'bold', fill: 0xffe45c } });
   t2.anchor.set(0.5, 0);
   neon(t2, 0xffe45c, 22);
-  const help = new Pixi.Text({
-    text: 'WASD 推进弹珠 · 撞墙反弹叠加速\nJ 发射弹珠 · 子弹弹墙变强\nK 冲刺撞击 · 冲刺时无敌\nH 消耗能量修复护甲\n空格 过载模式 · 双倍伤害与射速\nESC 暂停战斗\n\n击破获得经验 · 升级三选一强化卡（61 种效果 × 5 阶）\n每次升级必出一张常驻技能卡 —— 选中后进入左下技能格，1 2 3 释放\n技能格满后再选常驻技能需替换其一 · 重复选择同一技能则升阶\n选卡：← → 切换 · 回车/空格 确认 · 1 2 3 直选 · 鼠标可点\n部分强力卡带有副作用 —— 卡有价，选之前先看清',
-    style: { fontFamily: '"Courier New", monospace', fontSize: 15, fontWeight: 'bold', fill: 0xc8e6ff, align: 'center', lineHeight: 24 }
+  const hint = new Pixi.Text({
+    text: '',
+    style: { fontFamily: '"Courier New", monospace', fontSize: 14, fontWeight: 'bold', fill: 0xc8e6ff, align: 'center', lineHeight: 22 }
   });
-  help.anchor.set(0.5, 0);
+  hint.anchor.set(0.5, 0);
   const go = new Pixi.Text({ text: '按 任 意 键 开 始', style: { fontFamily: '"Courier New", monospace', fontSize: 20, fontWeight: 'bold', fill: 0xffffff } });
   go.anchor.set(0.5, 0);
   neon(go, 0x5ffbf1, 18);
-  SCR.title.addChild(t1, t2, help, go);
-  SCR.title._parts = { t1, t2, help, go };
+  const tip = new Pixi.Text({ text: '— 按 T 查看详细介绍 —', style: { fontFamily: '"Courier New", monospace', fontSize: 13, fontWeight: 'bold', fill: 0xffc83d } });
+  tip.anchor.set(0.5, 0);
+  tip.eventMode = 'static';
+  tip.cursor = 'pointer';
+  tip.on('pointertap', ev => {
+    if(state.mode !== 'title') return;
+    if(ev && ev.stopPropagation) ev.stopPropagation();
+    audioInit();
+    state.mode = 'intro';
+  });
+  SCR.title.addChild(t1, t2, hint, go, tip);
+  SCR.title._parts = { t1, t2, hint, go, tip };
+
+  // ---- 详细介绍页（标题页按 T / 点触提示打开）：内容见 INTRO_SECTIONS ----
+  SCR.introDim = new Pixi.Graphics();
+  SCR.introDim.rect(0, 0, W, H).fill({ color: 0x03050c, alpha: 0.88 });
+  hudLayer.addChild(SCR.introDim);
+  SCR.intro = new Pixi.Container();
+  hudLayer.addChild(SCR.intro);
+  buildIntro();
 
   SCR.dead = new Pixi.Container();
   hudLayer.addChild(SCR.dead);
@@ -5025,17 +5528,23 @@ function buildScreens(){
 function layoutScreens(){
   const touch = isTouchDevice;
   const p = SCR.title._parts;
-  // 触屏端紧凑排版：字号缩小、整体上移，保证「点触屏幕开始」在可视区内
+  // 标题页精简排版：标题 + 副标题 + 两行提示（角括号框住）+ 开始 + T 提示
   setFs(p.t1, touch ? 40 : 62);
   setFs(p.t2, touch ? 14 : 22);
-  setFs(p.help, touch ? 11 : 15);
-  const hlh = touch ? 17 : 24;
-  if(p.help.style.lineHeight !== hlh) p.help.style.lineHeight = hlh;
+  setFs(p.hint, touch ? 11 : 14);
+  const hlh = touch ? 17 : 22;
+  if(p.hint.style.lineHeight !== hlh) p.hint.style.lineHeight = hlh;
   setFs(p.go, touch ? 16 : 20);
-  p.t1.position.set(W / 2, H / 2 - (touch ? 148 : 210));
-  p.t2.position.set(W / 2, H / 2 - (touch ? 100 : 138));
-  p.help.position.set(W / 2, H / 2 - (touch ? 72 : 90));
-  p.go.position.set(W / 2, H / 2 + (touch ? 118 : 214));
+  setFs(p.tip, touch ? 12 : 13);
+  p.hint.text = touch
+    ? '左摇杆移动 · 射击 / 冲刺 / 修复 / 过载\n每 5 波一只 BOSS · 升级三选一强化卡'
+    : 'WASD 移动 · J 射击 · K 冲刺 · H 修复 · 空格 过载\n每 5 波一只 BOSS · 升级三选一强化卡 · 第二只是吾二';
+  p.tip.text = touch ? '— 点触查看详细介绍 —' : '— 按 T 查看详细介绍 —';
+  p.t1.position.set(W / 2, H / 2 - (touch ? 118 : 150));
+  p.t2.position.set(W / 2, H / 2 - (touch ? 72 : 84));
+  p.hint.position.set(W / 2, H / 2 - (touch ? 30 : 4));
+  p.go.position.set(W / 2, H / 2 + (touch ? 74 : 96));
+  p.tip.position.set(W / 2, H / 2 + (touch ? 112 : 136));
   const d = SCR.dead._parts;
   setFs(d.d1, touch ? 40 : 58);
   setFs(d.d2, touch ? 14 : 22);
@@ -5046,18 +5555,18 @@ function layoutScreens(){
   d.d2.position.set(W / 2, H / 2 - (touch ? 32 : 40));
   d.d3.position.set(W / 2, H / 2 + (touch ? 66 : 80));
 
-  // 标题装饰：副标题两侧线 + 帮助区角括号
+  // 标题装饰：副标题两侧线 + 精简提示区角括号
   const td = SCR.titleDeco;
   td.clear();
   const tlw = Math.min(touch ? 240 : 320, W / 2 - 40);
   const tli = touch ? 118 : 200;
-  const ty2 = H / 2 - (touch ? 91 : 127);
+  const ty2 = H / 2 - (touch ? 65 : 73);
   td.moveTo(W / 2 - tlw, ty2).lineTo(W / 2 - tli, ty2).stroke({ width: 1, color: 0xffe45c, alpha: 0.4 });
   td.moveTo(W / 2 + tli, ty2).lineTo(W / 2 + tlw, ty2).stroke({ width: 1, color: 0xffe45c, alpha: 0.4 });
   td.circle(W / 2 - tli + 4, ty2, 2).fill({ color: 0xffe45c, alpha: 0.7 });
   td.circle(W / 2 + tli - 4, ty2, 2).fill({ color: 0xffe45c, alpha: 0.7 });
-  const bw2 = touch ? Math.min(460, W - 60) : 580, bh2 = touch ? 176 : 332,
-        bx2 = W / 2 - bw2 / 2, by2 = H / 2 - (touch ? 82 : 102), bl2 = 16;
+  const bw2 = Math.min(touch ? 440 : 640, W - 60), bh2 = touch ? 56 : 68,
+        bx2 = W / 2 - bw2 / 2, by2 = H / 2 - (touch ? 40 : 10), bl2 = 16;
   td.moveTo(bx2, by2 + bl2).lineTo(bx2, by2).lineTo(bx2 + bl2, by2)
     .moveTo(bx2 + bw2 - bl2, by2).lineTo(bx2 + bw2, by2).lineTo(bx2 + bw2, by2 + bl2)
     .moveTo(bx2, by2 + bh2 - bl2).lineTo(bx2, by2 + bh2).lineTo(bx2 + bl2, by2 + bh2)
@@ -5095,6 +5604,15 @@ function layoutScreens(){
     .moveTo(W / 2 - pw2 / 2, pb2 + ph2 - pl2).lineTo(W / 2 - pw2 / 2, pb2 + ph2).lineTo(W / 2 - pw2 / 2 + pl2, pb2 + ph2)
     .moveTo(W / 2 + pw2 / 2 - pl2, pb2 + ph2).lineTo(W / 2 + pw2 / 2, pb2 + ph2).lineTo(W / 2 + pw2 / 2, pb2 + ph2 - pl2)
     .stroke({ width: 1.2, color: 0x5ffbf1, alpha: 0.3 });
+
+  // 介绍页：内容已在 buildIntro 按参考尺寸排好，这里只更新返回提示文案并整体缩放居中
+  const ip = SCR.intro._parts;
+  ip.back.text = touch ? '— 点触任意处返回 —' : '— 按 T / ESC / 回车 返回 —';
+  SCR.introDim.clear();
+  SCR.introDim.rect(0, 0, W, H).fill({ color: 0x03050c, alpha: 0.88 });
+  const isc = Math.min(1, (W - 28) / ip.pw, (H - 28) / ip.ph);
+  SCR.intro.scale.set(isc);
+  SCR.intro.position.set((W - ip.pw * isc) / 2, (H - ip.ph * isc) / 2);
 }
 
 function scrGlow(i, x, y, w, h, color, a){
@@ -5110,6 +5628,8 @@ function scrGlow(i, x, y, w, h, color, a){
 function syncScreens(){
   ghEl.style.display = (state.mode === 'title' || state.mode === 'dead') ? 'block' : 'none';
   SCR.title.visible = state.mode === 'title';
+  SCR.intro.visible = state.mode === 'intro';
+  SCR.introDim.visible = state.mode === 'intro';
   SCR.dead.visible = state.mode === 'dead';
   SCR.pause.visible = state.mode === 'paused';
   if(SCR.glows) for(const g of SCR.glows) g.visible = false;
@@ -5122,8 +5642,12 @@ function syncScreens(){
     const pulse = 0.5 + 0.5 * Math.sin(state.time * 3.4);
     const p = SCR.title._parts;
     p.go.alpha = 0.4 + pulse * 0.6;
+    p.tip.alpha = 0.55 + pulse * 0.45;
     // 标题/副标题/提示改由 Text.dropShadow 发光，这里只留一层环境光
-    scrGlow(2, W / 2, p.help.y + 110, W * 0.52, 250, 0x5ffbf1, 0.12);
+    scrGlow(2, W / 2, H / 2 + 20, W * 0.42, 180, 0x5ffbf1, 0.10);
+  }
+  if(state.mode === 'intro'){
+    scrGlow(1, W / 2, H / 2, W * 0.55, H * 0.6, 0x5ffbf1, 0.10);
   }
   if(state.mode === 'dead'){
     const d = SCR.dead._parts;
@@ -5182,7 +5706,7 @@ function frame(ticker){
     for(let y = startY; y < vy1; y += s){ grow.moveTo(vx0, y); grow.lineTo(vx1, y); }
     grow.stroke({ width: 1, color: 0x1de9ff, alpha: 0.10 });
   }
-  PV.group.forEach(s => { if(state.mode === 'title') s.visible = false; });
+  PV.group.forEach(s => { if(state.mode === 'title' || state.mode === 'intro') s.visible = false; });
 
   // HUD
   const showHud = state.mode === 'playing' || state.mode === 'cards' || state.mode === 'paused';
@@ -5486,9 +6010,7 @@ async function main(){
   layoutScreens();
 
   if(isTouchDevice){
-    const tp = SCR.title._parts;
-    tp.help.text = '左侧摇杆移动 · 撞墙反弹叠加速\n射击 发射弹珠 · 弹墙变强 · 冲刺 撞击且无敌\n修复 回甲 · 过载 双倍伤害射速\n\n击破升级 · 点触三选一强化卡\n常驻技能在右侧竖排 · 点亮即用 · 部分卡有副作用';
-    tp.go.text = '点 触 屏 幕 开 始';
+    // 标题页文案由 layoutScreens 按触屏端设置（hint / tip）
     SCR.dead._parts.d3.text = '点触屏幕重新开始';
     SCR.pause._parts.p2.text = '点 ⏸ 继续战斗';
   }
@@ -5532,6 +6054,7 @@ async function main(){
   app.stage.hitArea = new Pixi.Rectangle(0, 0, W, H);
   app.stage.on('pointertap', () => {
     if(state.mode === 'title'){ audioInit(); tryFullscreen(); startGame(); }
+    else if(state.mode === 'intro'){ audioInit(); state.mode = 'title'; }
     else if(state.mode === 'dead'){ audioInit(); tryFullscreen(); startGame(); }
   });
 
